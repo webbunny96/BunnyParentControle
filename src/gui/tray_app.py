@@ -23,16 +23,29 @@ class TrayApp:
     
     def __init__(self) -> None:
         """Ініціалізує додаток у system tray."""
-        self.config = load_config()
+        logger.debug("Ініціалізація TrayApp...")
+        
+        # Створюємо головне вікно спочатку
         self.root: Optional[tk.Tk] = None
         self.icon: Optional[pystray.Icon] = None
         self.settings_window: Optional[SettingsWindow] = None
         self.quit_requested = False
         
-        # Створюємо головне вікно (приховане)
+        logger.debug("Створюємо головне вікно...")
         self.root = tk.Tk()
         self.root.withdraw()  # Ховаємо вікно
         self.root.protocol("WM_DELETE_WINDOW", self._on_root_close)
+        
+        # Завантажуємо конфігурацію після створення вікна
+        logger.debug("Завантажуємо конфігурацію...")
+        try:
+            self.config = load_config()
+            logger.debug("Конфігурація завантажена успішно")
+        except Exception as e:
+            logger.error(f"Помилка завантаження конфігурації: {e}", exc_info=True)
+            # Створюємо дефолтну конфігурацію якщо не вдалося завантажити
+            from src.core.config import create_default_config
+            self.config = create_default_config()
         
         # Перевіряємо чи це перший запуск
         if not self.config.get("parent_password"):
@@ -272,9 +285,18 @@ class TrayApp:
     
     def run(self) -> None:
         """Запускає додаток."""
-        # Налаштовуємо обробники сигналів для запобігання закриттю без пароля
-        signal.signal(signal.SIGINT, self._handle_signal)
-        signal.signal(signal.SIGTERM, self._handle_signal)
+        # Налаштовуємо обробники сигналів тільки в головному потоці
+        # (signal handlers працюють тільки в головному потоці інтерпретатора)
+        if threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGINT, self._handle_signal)
+                signal.signal(signal.SIGTERM, self._handle_signal)
+            except (ValueError, OSError) as e:
+                # Ігноруємо помилки встановлення signal handlers
+                # (може не працювати на Windows або в деяких середовищах)
+                logger.debug(f"Не вдалося встановити signal handlers: {e}")
+        else:
+            logger.debug("GUI запущено в окремому потоці, signal handlers не встановлюємо")
         
         if not self.config.get("parent_password"):
             # Перший запуск - показуємо налаштування, очікуємо закриття

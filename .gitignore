@@ -15,6 +15,12 @@ venv.bak/
 
 # Config & Secrets
 .env
+
+# PyInstaller
+build/
+*.spec.bak
+*.pyz
+*.pyz.hash
 .env.local
 .env.*.local
 config.json

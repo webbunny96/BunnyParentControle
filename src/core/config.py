@@ -6,12 +6,16 @@
 import json
 import os
 import secrets
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Константи
 CONFIG_FILE = "config.json"
 DEFAULT_SCHEDULE = {str(i): {"start": "22:00", "end": "07:00", "enabled": False} for i in range(7)}
+
+# Lock для синхронізації доступу до config.json
+_config_lock = threading.Lock()
 
 
 def get_config_path() -> Path:
@@ -36,27 +40,59 @@ def load_config() -> Dict[str, Any]:
     Raises:
         ValueError: Якщо файл конфігурації пошкоджений і не може бути прочитаний
     """
-    config_path = get_config_path()
+    from src.utils.logger import get_logger
+    logger = get_logger(__name__)
     
-    if not config_path.exists():
-        # Створюємо нову конфігурацію
-        new_config = create_default_config()
-        save_config(new_config)
-        return new_config
+    logger.info("Отримуємо lock для завантаження конфігурації...")
+    # Використовуємо timeout для lock, щоб уникнути зависання
+    lock_acquired = _config_lock.acquire(timeout=5.0)
+    if not lock_acquired:
+        logger.error("Не вдалося отримати lock для конфігурації за 5 секунд!")
+        raise RuntimeError("Не вдалося отримати lock для конфігурації")
     
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        raise ValueError(f"Помилка читання конфігурації: {e}") from e
-    
-    # Нормалізуємо конфігурацію (додаємо відсутні поля)
-    config = normalize_config(config)
-    
-    # Зберігаємо оновлену конфігурацію якщо були додані поля
-    save_config(config)
-    
-    return config
+        logger.info("Lock отримано, завантажуємо конфігурацію...")
+        config_path = get_config_path()
+        logger.info(f"Шлях до конфігурації: {config_path}")
+        
+        if not config_path.exists():
+            logger.info("Файл конфігурації не існує, створюємо нову...")
+            # Створюємо нову конфігурацію
+            new_config = create_default_config()
+            # Використовуємо внутрішню версію, оскільки ми вже в lock
+            _save_config_internal(new_config)
+            logger.info("Нова конфігурація створена")
+            return new_config
+        
+        logger.debug("Читаємо файл конфігурації...")
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            logger.debug("Файл конфігурації прочитано успішно")
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Помилка читання конфігурації: {e}")
+            raise ValueError(f"Помилка читання конфігурації: {e}") from e
+        
+        # Нормалізуємо конфігурацію (додаємо відсутні поля)
+        logger.debug("Нормалізуємо конфігурацію...")
+        # Створюємо копію для порівняння
+        original_config_str = json.dumps(config, sort_keys=True)
+        config = normalize_config(config)
+        normalized_config_str = json.dumps(config, sort_keys=True)
+        
+        # Зберігаємо оновлену конфігурацію тільки якщо були реальні зміни
+        if original_config_str != normalized_config_str:
+            logger.debug("Конфігурація змінена, зберігаємо...")
+            # Використовуємо внутрішню версію, оскільки ми вже в lock
+            _save_config_internal(config)
+        else:
+            logger.debug("Конфігурація не змінена")
+        
+        logger.info("Конфігурація завантажена успішно")
+        return config
+    finally:
+        logger.info("Звільняємо lock для config...")
+        _config_lock.release()
 
 
 def normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -147,8 +183,10 @@ def create_default_config() -> Dict[str, Any]:
     }
 
 
-def save_config(config: Dict[str, Any]) -> None:
-    """Зберігає конфігурацію у файл.
+def _save_config_internal(config: Dict[str, Any]) -> None:
+    """Внутрішня функція для збереження конфігурації без lock.
+    
+    Використовується всередині функцій, які вже мають lock.
     
     Args:
         config: Словник з конфігурацією для збереження
@@ -165,17 +203,91 @@ def save_config(config: Dict[str, Any]) -> None:
     # Створюємо атомарне збереження (спочатку в тимчасовий файл)
     temp_path = config_path.with_suffix('.tmp')
     
-    try:
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(validated_config, f, indent=4, ensure_ascii=False)
-        
-        # Переміщуємо файл атомарно
-        temp_path.replace(config_path)
-    except IOError as e:
-        # Видаляємо тимчасовий файл у разі помилки
-        if temp_path.exists():
+    # Видаляємо старий тимчасовий файл якщо він існує
+    if temp_path.exists():
+        try:
             temp_path.unlink()
-        raise IOError(f"Помилка збереження конфігурації: {e}") from e
+        except OSError:
+            pass  # Ігноруємо помилки видалення
+    
+    max_retries = 5
+    retry_delay = 0.1
+    
+    for attempt in range(max_retries):
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(validated_config, f, indent=4, ensure_ascii=False)
+            
+            # Переміщуємо файл атомарно
+            temp_path.replace(config_path)
+            return  # Успішно збережено
+        except (IOError, OSError) as e:
+            if attempt < max_retries - 1:
+                # Чекаємо перед повторною спробою
+                import time
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Експоненційна затримка
+            else:
+                # Видаляємо тимчасовий файл у разі помилки
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
+                raise IOError(f"Помилка збереження конфігурації: {e}") from e
+
+
+def save_config(config: Dict[str, Any]) -> None:
+    """Зберігає конфігурацію у файл.
+    
+    Args:
+        config: Словник з конфігурацією для збереження
+        
+    Raises:
+        IOError: Якщо не вдалося записати файл
+        ValueError: Якщо конфігурація невалідна
+    """
+    with _config_lock:
+        # Валідуємо конфігурацію перед збереженням
+        validated_config = validate_config(config)
+        
+        config_path = get_config_path()
+        
+        # Створюємо атомарне збереження (спочатку в тимчасовий файл)
+        temp_path = config_path.with_suffix('.tmp')
+        
+        # Видаляємо старий тимчасовий файл якщо він існує
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass  # Ігноруємо помилки видалення
+        
+        max_retries = 5
+        retry_delay = 0.1
+        
+        for attempt in range(max_retries):
+            try:
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(validated_config, f, indent=4, ensure_ascii=False)
+                
+                # Переміщуємо файл атомарно
+                temp_path.replace(config_path)
+                return  # Успішно збережено
+            except (IOError, OSError) as e:
+                if attempt < max_retries - 1:
+                    # Чекаємо перед повторною спробою
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Експоненційна затримка
+                else:
+                    # Видаляємо тимчасовий файл у разі помилки
+                    if temp_path.exists():
+                        try:
+                            temp_path.unlink()
+                        except OSError:
+                            pass
+                    raise IOError(f"Помилка збереження конфігурації: {e}") from e
 
 
 def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
