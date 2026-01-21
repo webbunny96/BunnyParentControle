@@ -44,6 +44,8 @@ class SettingsWindow:
         if not is_first_run:
             self.window.transient(parent)
             self.window.grab_set()
+            # Обробник закриття вікна налаштувань (не перший запуск)
+            self.window.protocol("WM_DELETE_WINDOW", self._on_close_settings)
         else:
             # Забороняємо закриття на першому запуску без пароля
             self.window.protocol("WM_DELETE_WINDOW", self._on_close_first_run)
@@ -65,7 +67,8 @@ class SettingsWindow:
         self._check_result_queue()
         
         # На першому запуску вимикаємо кнопку збереження до введення пароля
-        if is_first_run:
+        # Перевірка після створення віджетів, щоб save_button вже існував
+        if is_first_run and hasattr(self, 'save_button'):
             self.save_button.config(state="disabled")
     
     def _center_window(self) -> None:
@@ -318,6 +321,21 @@ class SettingsWindow:
                 height=2
             )
             cancel_button.pack(side="left", padx=5)
+    
+    def _on_close_settings(self) -> None:
+        """Обробник закриття вікна налаштувань (не перший запуск)."""
+        # Просто закриваємо вікно налаштувань, root вікно залишається живим
+        # Використовуємо withdraw() замість destroy() для безпеки
+        # але для Toplevel потрібно використовувати destroy()
+        try:
+            self.window.destroy()
+        except Exception as e:
+            logger.error(f"Помилка при закритті вікна налаштувань: {e}")
+            # Якщо не вдалося закрити, просто ховаємо
+            try:
+                self.window.withdraw()
+            except:
+                pass
     
     def _on_close_first_run(self) -> None:
         """Обробник закриття вікна на першому запуску."""

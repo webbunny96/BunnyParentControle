@@ -34,7 +34,11 @@ class TrayApp:
         logger.debug("Створюємо головне вікно...")
         self.root = tk.Tk()
         self.root.withdraw()  # Ховаємо вікно
+        # ВАЖЛИВО: Забороняємо закриття root вікна через X кнопку
+        # Root вікно має залишатися живим для підтримки tray іконки
         self.root.protocol("WM_DELETE_WINDOW", self._on_root_close)
+        # Переконаємося що root вікно не закривається при закритті дочірніх вікон
+        self.root.wm_attributes("-topmost", False)  # Не робимо завжди поверх інших
         
         # Завантажуємо конфігурацію після створення вікна
         logger.debug("Завантажуємо конфігурацію...")
@@ -48,14 +52,27 @@ class TrayApp:
             self.config = create_default_config()
         
         # Перевіряємо чи це перший запуск
-        if not self.config.get("parent_password"):
-            logger.info("Перший запуск - показуємо налаштування")
-            self.show_settings(first_run=True)
-        else:
+        # Не викликаємо show_settings тут - це буде зроблено в run()
+        # щоб уникнути подвійного виклику
+        self._is_first_run = not self.config.get("parent_password")
+        if not self._is_first_run:
+            # Якщо не перший запуск, налаштовуємо tray одразу
             self._setup_tray()
     
     def _on_root_close(self) -> None:
         """Обробник закриття головного вікна."""
+        logger.debug("Спроба закрити root вікно")
+        
+        # Перевіряємо чи є відкрите вікно налаштувань
+        if self.settings_window and self.settings_window.window.winfo_exists():
+            logger.debug("Вікно налаштувань відкрите, закриваємо його замість root")
+            # Закриваємо вікно налаштувань замість root
+            try:
+                self.settings_window.window.destroy()
+            except:
+                pass
+            return
+        
         config = load_config()
         if not config.get("parent_password"):
             messagebox.showwarning(
@@ -68,6 +85,11 @@ class TrayApp:
             self.root.wait_window(dialog.dialog)
             if dialog.result:
                 self.quit_app()
+            else:
+                # Якщо пароль невірний, не закриваємо root вікно
+                # Просто ховаємо його
+                if self.root:
+                    self.root.withdraw()
     
     def _setup_tray(self) -> None:
         """Налаштовує system tray icon."""
@@ -166,25 +188,81 @@ class TrayApp:
                     self.settings_window.window.destroy()
                 except Exception:
                     pass
+                self.settings_window = None
             
             # Створюємо нове вікно налаштувань
             self.settings_window = SettingsWindow(self.root, is_first_run=first_run)
             
             if first_run:
                 # Очікуємо поки налаштування будуть збережені
-                self.root.wait_window(self.settings_window.window)
-                # Після першого запуску налаштовуємо tray
+                try:
+                    self.root.wait_window(self.settings_window.window)
+                except tk.TclError:
+                    # Вікно вже закрите, це нормально
+                    logger.debug("Вікно налаштувань вже закрите")
+                
+                # Очищаємо посилання на вікно налаштувань
+                self.settings_window = None
+                
+                # Переконаємося що root вікно ще існує перед продовженням
+                if not self.root or not self.root.winfo_exists():
+                    logger.error("Root вікно було закрите після збереження налаштувань!")
+                    return
+                
+                # Перезавантажуємо конфігурацію після збереження
                 self.config = load_config()
+                
+                # Після першого запуску налаштовуємо tray іконку
                 if self.config.get("parent_password"):
+                    logger.info("Пароль встановлено, налаштовуємо tray іконку...")
+                    self._is_first_run = False  # Позначаємо що перший запуск завершено
                     self._setup_tray()
+                    # Ховаємо root вікно після налаштування tray
+                    # Але root вікно має залишатися живим для підтримки tray іконки
+                    if self.root and self.root.winfo_exists():
+                        try:
+                            self.root.withdraw()
+                            logger.info("Перший запуск завершено, tray іконка активна, root вікно приховано")
+                        except tk.TclError as e:
+                            logger.error(f"Помилка при приховуванні root вікна: {e}")
+                    else:
+                        logger.error("Root вікно не існує після налаштування tray!")
+                else:
+                    logger.warning("Пароль не встановлено після першого запуску")
             else:
-                self.root.wait_window(self.settings_window.window)
-                # Ховаємо root вікно після закриття налаштувань
+                # Очікуємо закриття вікна налаштувань
+                # Використовуємо try-except щоб переконатися що root не закривається
+                try:
+                    self.root.wait_window(self.settings_window.window)
+                except tk.TclError:
+                    # Вікно вже закрите, це нормально
+                    logger.debug("Вікно налаштувань вже закрите")
+                
+                # Очищаємо посилання на вікно налаштувань
+                self.settings_window = None
+                
+                # Переконаємося що root вікно існує та не закрите
                 if self.root:
-                    self.root.withdraw()
+                    try:
+                        # Перевіряємо чи root вікно ще існує
+                        self.root.winfo_exists()
+                        # Ховаємо root вікно після закриття налаштувань
+                        # Але root вікно залишається живим для підтримки tray іконки
+                        self.root.withdraw()
+                        logger.debug("Вікно налаштувань закрито, root вікно залишається живим для tray")
+                    except tk.TclError:
+                        logger.error("Root вікно було закрите! Це не повинно статися")
+                        # Якщо root вікно закрилося, трей іконка також зникне
+                        # Але це не повинно статися
                     
         except Exception as e:
             logger.error(f"Помилка при показі налаштувань: {e}", exc_info=True)
+            # Навіть при помилці root вікно має залишатися живим
+            if self.root:
+                try:
+                    self.root.withdraw()
+                except:
+                    pass
     
     def _quit_app_with_password(self, icon=None, item=None) -> None:
         """Запит на вихід - потребує пароль (викликається з tray thread).
@@ -298,13 +376,17 @@ class TrayApp:
         else:
             logger.debug("GUI запущено в окремому потоці, signal handlers не встановлюємо")
         
-        if not self.config.get("parent_password"):
-            # Перший запуск - показуємо налаштування, очікуємо закриття
+        # Перевіряємо чи це перший запуск (немає пароля)
+        if self._is_first_run:
+            # Перший запуск - показуємо налаштування
+            logger.info("Перший запуск - показуємо вікно налаштувань")
             self.show_settings(first_run=True)
+            # Після збереження налаштувань show_settings() налаштує tray іконку
+            # та приховає root вікно, тому просто запускаємо mainloop
             self.root.mainloop()
         else:
-            # Звичайний запуск - показуємо tray та запускаємо mainloop
-            self._setup_tray()
+            # Звичайний запуск - tray вже налаштовано в __init__
+            logger.info("Звичайний запуск - tray іконка активна")
             # Запускаємо mainloop для підтримки GUI відгуку
             self.root.mainloop()
 
