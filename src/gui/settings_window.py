@@ -4,6 +4,8 @@ import tkinter as tk
 from tkinter import messagebox
 from typing import Optional
 from PIL import Image, ImageTk
+import queue
+import threading
 
 from src.core.config import load_config, save_config
 from src.utils.logger import get_logger
@@ -52,9 +54,15 @@ class SettingsWindow:
         # Завантажуємо токен з .env
         self.bot_token = get_bot_token_from_env()
         
+        # Черга для передачі результатів з потоку в головний потік GUI
+        self.result_queue = queue.Queue()
+        
         # Створюємо віджети
         self._create_widgets()
         self.update_qr_code()
+        
+        # Запускаємо перевірку черги результатів
+        self._check_result_queue()
         
         # На першому запуску вимикаємо кнопку збереження до введення пароля
         if is_first_run:
@@ -89,13 +97,83 @@ class SettingsWindow:
             font=("Arial", 10)
         ).pack(anchor="w")
         
-        self.token_entry = tk.Entry(token_frame, width=50, show="*")
-        self.token_entry.pack(fill="x", pady=5)
+        # Фрейм для поля вводу та кнопки вставки
+        entry_frame = tk.Frame(token_frame)
+        entry_frame.pack(fill="x", pady=5)
+        
+        self.token_entry = tk.Entry(entry_frame, width=40, show="*")
+        self.token_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        # Кнопка вставки з буферу обміну
+        paste_button = tk.Button(
+            entry_frame,
+            text="Вставити",
+            command=self._paste_token_from_clipboard,
+            width=12,
+            font=("Arial", 9),
+            cursor="hand2"
+        )
+        paste_button.pack(side="right", fill="y")
         
         if self.bot_token:
             self.token_entry.insert(0, self.bot_token)
         
-        self.token_entry.bind("<KeyRelease>", lambda e: self.update_qr_code())
+        # Статус підключення
+        self.connection_status_label = tk.Label(
+            token_frame,
+            text="",
+            font=("Arial", 9),
+            fg="gray"
+        )
+        self.connection_status_label.pack(anchor="w", pady=(2, 0))
+        
+        # Обробка подій для оновлення QR-коду з затримкою
+        self._qr_update_scheduled = None
+        
+        def schedule_qr_update():
+            """Планує оновлення QR-коду з затримкою."""
+            # Відміняємо попереднє заплановане оновлення якщо воно є
+            if self._qr_update_scheduled is not None:
+                try:
+                    self.window.after_cancel(self._qr_update_scheduled)
+                except:
+                    pass
+            
+            # Плануємо оновлення через 500мс після останньої зміни
+            # Це дозволяє вставити весь текст перед перевіркою
+            self._qr_update_scheduled = self.window.after(500, self.update_qr_code)
+        
+        def on_modified(event):
+            """Обробник зміни тексту в полі (викликається для всіх змін, включаючи вставку)."""
+            if self.token_entry.edit_modified():
+                # Скидаємо прапорець Modified
+                self.token_entry.edit_modified(False)
+                # Плануємо оновлення
+                schedule_qr_update()
+        
+        def on_paste(event=None):
+            """Обробник вставки - дозволяє стандартну обробку, потім планує оновлення."""
+            # Дозволяємо стандартну обробку вставки Tkinter
+            # Після вставки викличеться Modified, який запланує оновлення
+            # Але також плануємо оновлення тут для надійності
+            self.window.after(100, schedule_qr_update)
+            return None  # Не блокуємо стандартну обробку
+        
+        # Використовуємо подію Modified для всіх змін тексту
+        self.token_entry.bind("<<Modified>>", on_modified)
+        
+        # Явна обробка вставки через Ctrl+V та Shift+Insert
+        self.token_entry.bind("<Control-v>", on_paste)
+        self.token_entry.bind("<Shift-Insert>", on_paste)
+        
+        # Також обробляємо вставку через контекстне меню (права кнопка миші)
+        # Tkinter автоматично обробляє це, але ми можемо додати обробник для надійності
+        def on_button_release(event):
+            """Обробник відпускання кнопки миші - може бути вставка через контекстне меню."""
+            # Плануємо перевірку через невелику затримку
+            self.window.after(100, schedule_qr_update)
+        
+        self.token_entry.bind("<ButtonRelease-1>", on_button_release)
         
         # Фрейм для QR-коду
         qr_frame = tk.Frame(self.window)
@@ -164,6 +242,53 @@ class SettingsWindow:
         # Прив'язка подій для перевірки паролів
         self.password_entry.bind("<KeyRelease>", self._check_password_fields)
         self.password_confirm_entry.bind("<KeyRelease>", self._check_password_fields)
+    
+    def _paste_token_from_clipboard(self) -> None:
+        """Вставляє токен з буферу обміну в поле вводу."""
+        try:
+            # Отримуємо текст з буферу обміну
+            clipboard_text = self.window.clipboard_get()
+            
+            if clipboard_text:
+                clipboard_text = clipboard_text.strip()
+                
+                # Отримуємо позицію курсора
+                cursor_pos = self.token_entry.index(tk.INSERT)
+                
+                # Якщо поле порожнє або користувач хоче замінити весь текст
+                # Очищаємо поле та вставляємо новий текст
+                if not self.token_entry.get() or cursor_pos == 0:
+                    self.token_entry.delete(0, tk.END)
+                    self.token_entry.insert(0, clipboard_text)
+                else:
+                    # Вставляємо в позицію курсора
+                    self.token_entry.insert(tk.INSERT, clipboard_text)
+                
+                # Переміщуємо фокус на поле вводу
+                self.token_entry.focus_set()
+                
+                # Плануємо оновлення QR-коду
+                self.update_qr_code()
+                logger.debug("Токен вставлено з буферу обміну")
+        except tk.TclError as e:
+            # Буфер обміну порожній або містить не текст
+            logger.warning(f"Буфер обміну порожній або містить не текст: {e}")
+            messagebox.showwarning(
+                "Помилка",
+                "Буфер обміну порожній або містить не текст.\nСкопіюйте токен та спробуйте ще раз."
+            )
+        except Exception as e:
+            logger.error(f"Помилка вставки з буферу обміну: {e}", exc_info=True)
+            messagebox.showerror(
+                "Помилка",
+                f"Не вдалося вставити текст з буферу обміну:\n{str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Помилка вставки з буферу обміну: {e}")
+            messagebox.showerror(
+                "Помилка",
+                f"Не вдалося вставити текст з буферу обміну:\n{str(e)}"
+            )
         
         # Кнопки
         button_frame = tk.Frame(self.window)
@@ -227,12 +352,170 @@ class SettingsWindow:
         if not token:
             self.qr_label.config(image="", text="Введіть токен для генерації QR-коду")
             self.otp_display_label.config(text="")
+            self.connection_status_label.config(text="", fg="gray")
             return
         
-        # Отримуємо username бота
-        bot_username = get_bot_username(token)
+        # Показуємо статус підключення
+        self.connection_status_label.config(text="Підключення...", fg="blue")
+        self.window.update_idletasks()  # Оновлюємо GUI без блокування
         
+        # Отримуємо username бота в окремому потоці, щоб не блокувати GUI
+        def check_token():
+            """Перевіряє токен в окремому потоці."""
+            try:
+                bot_username = get_bot_username(token, timeout=5)
+                
+                # Передаємо результат через чергу в головний потік
+                self.result_queue.put(('success', bot_username, token))
+            except Exception as e:
+                error_msg = str(e)
+                if "timeout" in error_msg.lower() or "Timeout" in error_msg:
+                    error_msg = "Таймаут підключення. Перевірте інтернет-з'єднання"
+                elif "invalid" in error_msg.lower() or "401" in error_msg:
+                    error_msg = "Невірний токен. Перевірте правильність токену"
+                else:
+                    error_msg = f"Помилка підключення: {error_msg}"
+                
+                # Передаємо помилку через чергу в головний потік
+                self.result_queue.put(('error', error_msg))
+        
+        # Запускаємо перевірку в окремому потоці
+        threading.Thread(target=check_token, daemon=True).start()
+    
+    def _check_result_queue(self) -> None:
+        """Перевіряє чергу результатів та оновлює GUI в головному потоці."""
+        try:
+            while True:
+                result = self.result_queue.get_nowait()
+                result_type = result[0]
+                
+                if result_type == 'success':
+                    bot_username, token = result[1], result[2]
+                    self._update_qr_with_username(bot_username, token)
+                elif result_type == 'error':
+                    error_msg = result[1]
+                    self._update_qr_with_error(error_msg)
+        except queue.Empty:
+            pass
+        
+        # Плануємо наступну перевірку через 100мс
+        self.window.after(100, self._check_result_queue)
+    
+    def _update_qr_with_username(self, bot_username: Optional[str], token: str) -> None:
+        """Оновлює QR-код з отриманим username бота."""
         if not bot_username:
+            self.connection_status_label.config(
+                text="Помилка підключення: не вдалося отримати дані бота",
+                fg="red"
+            )
+            self.qr_label.config(
+                image="",
+                text="Помилка підключення до Telegram API"
+            )
+            self.otp_display_label.config(text="")
+            return
+        
+        # Підключення успішне
+        self.connection_status_label.config(
+            text=f"Підключено до @{bot_username}",
+            fg="green"
+        )
+        
+        # Створюємо URL для авторизації
+        otp_code = self.config.get('otp', 'N/A')
+        auth_url = create_auth_url(bot_username, otp_code)
+        
+        try:
+            # Генеруємо QR-код
+            qr_img = generate_qr_code_resized(
+                data=auth_url,
+                size=(150, 150),
+                version=1,
+                box_size=5,
+                border=4
+            )
+            
+            self.qr_photo = ImageTk.PhotoImage(qr_img)
+            self.qr_label.config(image=self.qr_photo, text="")
+            
+            # Відображаємо OTP код
+            self.otp_display_label.config(
+                text=otp_code,
+                font=("Arial", 24, "bold"),
+                fg="#1976D2"
+            )
+            
+            logger.debug("QR-код оновлено")
+            
+        except Exception as e:
+            logger.error(f"Помилка генерації QR-коду: {e}")
+            self.qr_label.config(image="", text=f"Помилка генерації QR-коду: {str(e)}")
+            self.otp_display_label.config(text="")
+            self.connection_status_label.config(
+                text=f"Помилка генерації QR-коду: {str(e)}",
+                fg="red"
+            )
+    
+    def _update_qr_with_error(self, error_msg: str) -> None:
+        """Оновлює GUI з повідомленням про помилку."""
+        self.connection_status_label.config(
+            text=error_msg,
+            fg="red"
+        )
+        self.qr_label.config(
+            image="",
+            text="Помилка підключення до Telegram API"
+        )
+        self.otp_display_label.config(text="")
+    
+    def update_qr_code_old(self) -> None:
+        """Стара версія update_qr_code (залишено для резерву)."""
+        token = self.token_entry.get().strip()
+        
+        if not token:
+            self.qr_label.config(image="", text="Введіть токен для генерації QR-коду")
+            self.otp_display_label.config(text="")
+            self.connection_status_label.config(text="", fg="gray")
+            return
+        
+        # Показуємо статус підключення
+        self.connection_status_label.config(text="Підключення...", fg="blue")
+        self.window.update_idletasks()  # Оновлюємо GUI без блокування
+        
+        # Отримуємо username бота
+        try:
+            bot_username = get_bot_username(token, timeout=5)
+            
+            if not bot_username:
+                self.connection_status_label.config(
+                    text="Помилка підключення: не вдалося отримати дані бота",
+                    fg="red"
+                )
+                self.qr_label.config(
+                    image="",
+                    text="Помилка підключення до Telegram API"
+                )
+                self.otp_display_label.config(text="")
+                return
+            
+            # Підключення успішне
+            self.connection_status_label.config(
+                text=f"Підключено до @{bot_username}",
+                fg="green"
+            )
+        except Exception as e:
+            error_msg = str(e)
+            if "timeout" in error_msg.lower() or "Timeout" in error_msg:
+                error_msg = "Таймаут підключення. Перевірте інтернет-з'єднання"
+            elif "invalid" in error_msg.lower() or "401" in error_msg:
+                error_msg = "Невірний токен. Перевірте правильність токену"
+            else:
+                error_msg = f"Помилка підключення: {error_msg}"
+            
+            self.connection_status_label.config(
+                text=error_msg,
+                fg="red"
+            )
             self.qr_label.config(
                 image="",
                 text="Помилка підключення до Telegram API"
@@ -287,16 +570,25 @@ class SettingsWindow:
         
         # Зберігаємо токен в .env
         token = self.token_entry.get().strip()
+        token_saved = False
         if token:
             if not save_bot_token_to_env(token):
                 messagebox.showerror("Помилка", "Не вдалося зберегти токен!")
                 return
+            token_saved = True
         
         # Зберігаємо пароль в конфігурацію
         self.config["parent_password"] = password
         save_config(self.config)
         
         logger.info("Налаштування збережено")
+        
+        # Якщо токен збережено, сигналізуємо про необхідність запуску бота
+        if token_saved:
+            from src.utils.bot_signal import signal_bot_start
+            signal_bot_start()
+            logger.info("Сигнал запуску бота відправлено")
+        
         messagebox.showinfo("Успіх", "Налаштування збережено!")
         self.window.destroy()
 

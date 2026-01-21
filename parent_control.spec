@@ -38,6 +38,7 @@ a = Analysis(
         'src.utils.qr_generator',
         'src.utils.telegram_api',
         'src.utils.env_manager',
+        'src.utils.bot_signal',
         
         # External libraries
         'aiogram',

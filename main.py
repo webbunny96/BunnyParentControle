@@ -20,6 +20,7 @@ from src.utils.path_helper import get_executable_command, is_frozen
 from src.bot.bot_runner import run_bot
 from src.gui.gui_runner import run_gui_thread
 from src.gui.blocking_runner import run_blocking_window, BlockingWindowThread
+from src.utils.bot_signal import check_bot_start_signal
 
 # Налаштування логування
 setup_logging(level=20)  # INFO level
@@ -28,6 +29,9 @@ logger = get_logger(__name__)
 
 # Глобальна змінна для зберігання поточного вікна блокування
 _blocking_window_thread: Optional[BlockingWindowThread] = None
+
+# Event для сигналізації про необхідність запуску бота
+_bot_start_event = asyncio.Event()
 
 
 async def on_block_callback(config: dict) -> None:
@@ -164,33 +168,97 @@ async def main(launch_gui: bool = True) -> None:
     else:
         logger.info("OTP не знайдено в конфігурації")
     
-    logger.info("Переходимо до запуску бота...")
-    # Запускаємо бота як async task
-    logger.info("Починаємо запуск бота...")
+    # Перевіряємо чи є валідний токен перед запуском бота
+    logger.info("Перевіряємо наявність токену перед запуском бота...")
+    token = get_bot_token()
+    
     bot_task = None
-    try:
-        logger.info("Створюємо async task для бота...")
-        bot_task = asyncio.create_task(run_bot())
-        logger.info("Telegram бот запущено як async task")
-        
-        # Перевіряємо чи бот task не завершився одразу через помилку
-        await asyncio.sleep(0.5)  # Даємо час на ініціалізацію
-        if bot_task.done():
-            try:
-                result = await bot_task
-                logger.warning(f"Бот task завершився одразу. Результат: {result}")
-            except Exception as e:
-                logger.error(f"Бот завершився з помилкою: {e}", exc_info=True)
-                bot_task = None
-        else:
-            logger.info("Бот task працює нормально")
-    except Exception as e:
-        logger.error(f"Не вдалося запустити бота: {e}", exc_info=True)
-        bot_task = None
+    
+    # Якщо GUI запущено, чекаємо на сигнал від GUI про збереження токену
+    # Якщо GUI не запущено, запускаємо бота одразу якщо токен є
+    if gui_thread and gui_thread.is_alive():
+        logger.info("GUI запущено. Бот буде запущено після введення та збереження токену в GUI")
+        # Не запускаємо бота одразу, чекаємо на сигнал від GUI
+    elif token:
+        # GUI не запущено, але токен є - запускаємо бота одразу
+        logger.info("GUI не запущено, але токен знайдено. Валідуємо та запускаємо бота...")
+        try:
+            loop = asyncio.get_event_loop()
+            is_valid = await loop.run_in_executor(
+                None,
+                lambda: get_bot_username(token, timeout=3) is not None
+            )
+            
+            if is_valid:
+                logger.info("Токен валідний, запускаємо бота...")
+                try:
+                    bot_task = asyncio.create_task(run_bot())
+                    logger.info("Telegram бот запущено як async task")
+                    
+                    # Перевіряємо чи бот task не завершився одразу через помилку
+                    await asyncio.sleep(0.5)  # Даємо час на ініціалізацію
+                    if bot_task.done():
+                        try:
+                            result = await bot_task
+                            logger.warning(f"Бот task завершився одразу. Результат: {result}")
+                        except Exception as e:
+                            logger.error(f"Бот завершився з помилкою: {e}", exc_info=True)
+                            bot_task = None
+                    else:
+                        logger.info("Бот task працює нормально")
+                except Exception as e:
+                    logger.error(f"Не вдалося запустити бота: {e}", exc_info=True)
+                    bot_task = None
+            else:
+                logger.warning("Токен невалідний, бот не буде запущено")
+        except Exception as e:
+            logger.warning(f"Помилка валідації токену: {e}. Бот не буде запущено")
+    else:
+        logger.info("Токен не знайдено. Введіть токен в GUI для запуску бота")
     
     # Створюємо Event для сигналізації про закриття GUI
     gui_closed_event = asyncio.Event()
     gui_monitor_task = None
+    
+    async def monitor_bot_start():
+        """Моніторить події запуску бота після збереження токену."""
+        nonlocal bot_task
+        
+        while True:
+            await asyncio.sleep(2)  # Перевіряємо кожні 2 секунди
+            
+            # Перевіряємо чи є сигнал про необхідність запуску бота
+            if not check_bot_start_signal():
+                continue
+            
+            # Перевіряємо чи бот вже запущений
+            if bot_task and not bot_task.done():
+                logger.info("Бот вже запущений")
+                continue
+            
+            # Перевіряємо токен
+            token = get_bot_token()
+            if not token:
+                logger.warning("Токен не знайдено після сигналу запуску")
+                continue
+            
+            # Валідуємо та запускаємо бота
+            logger.info("Отримано сигнал запуску бота, перевіряємо токен...")
+            try:
+                loop = asyncio.get_event_loop()
+                is_valid = await loop.run_in_executor(
+                    None,
+                    lambda: get_bot_username(token, timeout=3) is not None
+                )
+                
+                if is_valid:
+                    logger.info("Токен валідний, запускаємо бота...")
+                    bot_task = asyncio.create_task(run_bot())
+                    logger.info("Бот запущено після збереження токену")
+                else:
+                    logger.warning("Токен невалідний, бот не запущено")
+            except Exception as e:
+                logger.error(f"Помилка запуску бота: {e}", exc_info=True)
     
     async def monitor_gui_thread():
         """Моніторить стан GUI потоку та сигналізує про закриття."""
@@ -222,6 +290,9 @@ async def main(launch_gui: bool = True) -> None:
     # Запускаємо моніторинг GUI в окремому таску (якщо GUI запущено)
     if gui_thread:
         gui_monitor_task = asyncio.create_task(monitor_gui_thread())
+    
+    # Запускаємо моніторинг запуску бота
+    bot_start_monitor_task = asyncio.create_task(monitor_bot_start())
     
     try:
         # Запускаємо моніторинг з callback функціями

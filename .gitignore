@@ -21,6 +21,10 @@ build/
 *.spec.bak
 *.pyz
 *.pyz.hash
+
+# Bot signals
+.bot_start_signal
+
 .env.local
 .env.*.local
 config.json

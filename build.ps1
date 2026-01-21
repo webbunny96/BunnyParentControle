@@ -24,6 +24,42 @@ if (-not (Test-Path $specFile)) {
 Write-Host "Збірка: Parent Control (parent_control.exe)" -ForegroundColor Cyan
 Write-Host ""
 
+# Перевіряємо та закриваємо запущений процес parent_control.exe
+$exeName = "parent_control.exe"
+$exePath = Join-Path $PSScriptRoot "dist\$exeName"
+
+Write-Host "Перевірка запущених процесів..." -ForegroundColor Yellow
+$processes = Get-Process -Name "parent_control" -ErrorAction SilentlyContinue
+if ($processes) {
+    Write-Host "Знайдено запущений процес $exeName. Закриваємо..." -ForegroundColor Yellow
+    foreach ($proc in $processes) {
+        try {
+            $proc.Kill()
+            Write-Host "Процес $($proc.Id) закрито" -ForegroundColor Green
+        } catch {
+            Write-Host "Не вдалося закрити процес $($proc.Id): $_" -ForegroundColor Red
+        }
+    }
+    # Чекаємо трохи, щоб процес точно завершився
+    Start-Sleep -Seconds 2
+} else {
+    Write-Host "Запущених процесів не знайдено" -ForegroundColor Green
+}
+
+# Спробуємо видалити старий exe файл якщо він існує
+if (Test-Path $exePath) {
+    Write-Host "Видаляємо старий exe файл..." -ForegroundColor Yellow
+    try {
+        Remove-Item -Path $exePath -Force -ErrorAction Stop
+        Write-Host "Старий exe файл видалено" -ForegroundColor Green
+    } catch {
+        Write-Host "Не вдалося видалити старий exe файл: $_" -ForegroundColor Red
+        Write-Host "Переконайтеся, що процес parent_control.exe не запущений!" -ForegroundColor Yellow
+    }
+}
+
+Write-Host ""
+
 try {
     pyinstaller --clean $specFile
     if ($LASTEXITCODE -eq 0) {
