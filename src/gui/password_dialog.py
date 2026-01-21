@@ -6,6 +6,7 @@ from typing import Optional
 
 from src.core.config import check_password
 from src.utils.logger import get_logger
+from src.gui.themes import THEME
 
 logger = get_logger(__name__)
 
@@ -23,9 +24,10 @@ class PasswordDialog:
         
         # Створюємо діалог
         self.dialog = tk.Toplevel(parent) if parent else tk.Tk()
-        self.dialog.title("Введіть батьківський пароль")
-        self.dialog.geometry("300x150")
+        self.dialog.title("🔒 Введіть батьківський пароль")
+        self.dialog.geometry("400x200")
         self.dialog.resizable(False, False)
+        self.dialog.configure(bg=THEME["bg"])
         
         # Центруємо вікно
         self._center_window()
@@ -56,43 +58,77 @@ class PasswordDialog:
         self.dialog.geometry(f'{width}x{height}+{x}+{y}')
     
     def _create_widgets(self) -> None:
-        """Створює віджети діалогу."""
-        # Мітка з інструкцією
-        tk.Label(
-            self.dialog,
-            text="Введіть батьківський пароль:",
-            font=("Arial", 10)
-        ).pack(pady=10)
+        """Створює віджети діалогу з сучасним дизайном."""
+        # Контейнер
+        container = tk.Frame(self.dialog, bg=THEME["bg"])
+        container.pack(fill="both", expand=True, padx=30, pady=30)
+        
+        # Заголовок
+        title_label = tk.Label(
+            container,
+            text="🔒 Введіть батьківський пароль",
+            font=("Segoe UI", 14, "bold"),
+            bg=THEME["bg"],
+            fg=THEME["fg"]
+        )
+        title_label.pack(pady=(0, 20))
         
         # Поле введення пароля
         self.password_entry = tk.Entry(
-            self.dialog,
+            container,
             show="*",
-            width=30,
-            font=("Arial", 12)
+            font=("Segoe UI", 12),
+            bg=THEME["entry_bg"],
+            fg=THEME["entry_fg"],
+            insertbackground=THEME["fg"],
+            relief="flat",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground=THEME["border"],
+            highlightcolor=THEME["accent"]
         )
-        self.password_entry.pack(pady=10)
+        self.password_entry.pack(fill="x", pady=(0, 20), ipady=10)
         self.password_entry.focus_set()
         self.password_entry.focus_force()
         self.password_entry.bind("<Return>", lambda e: self.check_password())
         
         # Кнопки
-        button_frame = tk.Frame(self.dialog)
-        button_frame.pack(pady=10)
+        button_frame = tk.Frame(container, bg=THEME["bg"])
+        button_frame.pack(fill="x")
         
-        tk.Button(
+        ok_button = tk.Button(
             button_frame,
-            text="OK",
+            text="✓ Підтвердити",
             command=self.check_password,
-            width=10
-        ).pack(side="left", padx=5)
+            font=("Segoe UI", 10, "bold"),
+            bg=THEME["button_bg"],
+            fg=THEME["button_fg"],
+            activebackground=THEME["button_active"],
+            activeforeground=THEME["button_fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=20,
+            pady=10,
+            bd=0
+        )
+        ok_button.pack(side="right", padx=(10, 0))
         
-        tk.Button(
+        cancel_button = tk.Button(
             button_frame,
-            text="Скасувати",
+            text="✗ Скасувати",
             command=self._cancel_action,
-            width=10
-        ).pack(side="left", padx=5)
+            font=("Segoe UI", 10),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"],
+            activebackground=THEME["border"],
+            activeforeground=THEME["fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=20,
+            pady=10,
+            bd=0
+        )
+        cancel_button.pack(side="right")
     
     def _cancel_action(self) -> None:
         """Обробник кнопки Скасувати."""

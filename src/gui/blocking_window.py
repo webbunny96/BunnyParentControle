@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 
 from src.utils.logger import get_logger
 from src.utils.qr_generator import generate_qr_code_resized
+from src.gui.themes import THEME
 
 logger = get_logger(__name__)
 
@@ -40,29 +41,43 @@ class BlockingWindow:
         self.bot_url = bot_url
         self.countdown_seconds = countdown_seconds
         
-        self.root.title("System Shutdown Warning")
+        self.root.title("⚠️ Система буде вимкнена")
         
         # Повноекранний режим
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
         
-        # Напівпрозорий фон (тільки Windows)
-        self.root.attributes("-alpha", 0.8)
-        self.root.configure(bg='black')
+        # Темний напівпрозорий фон
+        self.root.configure(bg='#000000')
+        self.root.attributes("-alpha", 0.95)
+        
+        # Головний контейнер
+        main_container = tk.Frame(self.root, bg='#000000')
+        main_container.pack(expand=True, fill="both")
         
         # Мітка з попередженням
         self.label = tk.Label(
-            self.root,
-            text=f"Комп'ютер вимкнеться через {self.countdown_seconds} секунд",
-            fg="white",
-            bg="black",
-            font=("Helvetica", 48, "bold")
+            main_container,
+            text=f"⚠️ Комп'ютер вимкнеться через {self.countdown_seconds} секунд",
+            fg="#ff4444",
+            bg="#000000",
+            font=("Segoe UI", 56, "bold")
         )
-        self.label.pack(expand=True)
+        self.label.pack(pady=(100, 50))
+        
+        # Великий таймер
+        self.timer_label = tk.Label(
+            main_container,
+            text=str(self.countdown_seconds),
+            fg="#ff4444",
+            bg="#000000",
+            font=("Segoe UI", 120, "bold")
+        )
+        self.timer_label.pack(pady=20)
         
         # Відображаємо OTP та QR-код якщо надано
         if self.otp:
-            self._create_otp_widgets()
+            self._create_otp_widgets(main_container)
         
         # Забороняємо закриття вікна
         self.root.protocol("WM_DELETE_WINDOW", lambda: None)
@@ -71,15 +86,33 @@ class BlockingWindow:
         # Запускаємо відлік
         self._update_timer()
     
-    def _create_otp_widgets(self) -> None:
+    def _create_otp_widgets(self, parent: tk.Widget) -> None:
         """Створює віджети для відображення OTP та QR-коду."""
+        # Контейнер для OTP та QR
+        otp_container = tk.Frame(parent, bg='#000000')
+        otp_container.pack(pady=50)
+        
         # Мітка з OTP кодом
+        tk.Label(
+            otp_container,
+            text="Код для Telegram боту:",
+            fg="#ffffff",
+            bg="#000000",
+            font=("Segoe UI", 20)
+        ).pack(pady=(0, 10))
+        
         self.otp_label = tk.Label(
-            self.root,
-            text=f"Код для Telegram боту: {self.otp}",
-            fg="yellow",
-            bg="black",
-            font=("Helvetica", 24)
+            otp_container,
+            text=self.otp,
+            fg="#ffaa00",
+            bg="#000000",
+            font=("Consolas", 48, "bold"),
+            relief="flat",
+            bd=0,
+            padx=40,
+            pady=20,
+            highlightthickness=3,
+            highlightbackground="#ffaa00"
         )
         self.otp_label.pack(pady=10)
         
@@ -88,19 +121,23 @@ class BlockingWindow:
             try:
                 qr_img = generate_qr_code_resized(
                     data=self.bot_url,
-                    size=(300, 300),
+                    size=(400, 400),
                     version=1,
-                    box_size=5,
+                    box_size=8,
                     border=4
                 )
                 
                 self.qr_photo = ImageTk.PhotoImage(qr_img)
                 self.qr_label = tk.Label(
-                    self.root,
+                    otp_container,
                     image=self.qr_photo,
-                    bg="black"
+                    bg="#000000",
+                    relief="flat",
+                    bd=5,
+                    highlightbackground="#ffffff",
+                    highlightthickness=3
                 )
-                self.qr_label.pack(pady=20)
+                self.qr_label.pack(pady=30)
                 logger.debug("QR-код відображено в вікні блокування")
             except Exception as e:
                 logger.error(f"Помилка генерації QR-коду в вікні блокування: {e}")
@@ -109,12 +146,14 @@ class BlockingWindow:
         """Оновлює таймер відліку."""
         if self.countdown_seconds > 0:
             self.label.config(
-                text=f"Комп'ютер вимкнеться через {self.countdown_seconds} секунд"
+                text=f"⚠️ Комп'ютер вимкнеться через {self.countdown_seconds} секунд"
             )
+            self.timer_label.config(text=str(self.countdown_seconds))
             self.countdown_seconds -= 1
             self.root.after(1000, self._update_timer)
         else:
-            self.label.config(text="Вимикання...")
+            self.label.config(text="🔄 Вимикання...")
+            self.timer_label.config(text="0")
             self._shutdown_system()
     
     def _set_block_input(self, block: bool) -> None:

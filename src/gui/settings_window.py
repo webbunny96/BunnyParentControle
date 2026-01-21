@@ -12,6 +12,7 @@ from src.utils.logger import get_logger
 from src.utils.env_manager import get_bot_token_from_env, save_bot_token_to_env
 from src.utils.telegram_api import get_bot_username
 from src.utils.qr_generator import generate_qr_code_resized, create_auth_url
+from src.gui.themes import THEME
 
 logger = get_logger(__name__)
 
@@ -34,8 +35,11 @@ class SettingsWindow:
         self.window.title(
             "Налаштування" if not is_first_run else "Перший запуск - Налаштування"
         )
-        self.window.geometry("500x700")
+        self.window.geometry("650x530")
         self.window.resizable(False, False)
+        
+        # Застосовуємо темну тему
+        self.window.configure(bg=THEME["bg"])
         
         # Центруємо вікно
         self._center_window()
@@ -87,52 +91,125 @@ class SettingsWindow:
         self.window.geometry(f'{width}x{height}+{x}+{y}')
     
     def _create_widgets(self) -> None:
-        """Створює віджети вікна."""
-        # Заголовок
-        title_label = tk.Label(
-            self.window,
-            text="Налаштування системи",
-            font=("Arial", 16, "bold")
-        )
-        title_label.pack(pady=10)
+        """Створює віджети вікна з сучасним дизайном."""
+        # Головний контейнер з прокруткою
+        main_container = tk.Frame(self.window, bg=THEME["bg"])
+        main_container.pack(fill="both", expand=True, padx=0, pady=0)
         
-        # Поле введення токену
-        token_frame = tk.Frame(self.window)
-        token_frame.pack(pady=10, padx=20, fill="x")
+        # Компактний заголовок
+        header_frame = tk.Frame(main_container, bg=THEME["bg"], height=40)
+        header_frame.pack(fill="x", pady=(8, 10))
+        header_frame.pack_propagate(False)
+        
+        title_label = tk.Label(
+            header_frame,
+            text="⚙️ Налаштування системи",
+            font=("Segoe UI", 14, "bold"),
+            bg=THEME["bg"],
+            fg=THEME["fg"]
+        )
+        title_label.pack(pady=8)
+        
+        # Контейнер для контенту
+        content_frame = tk.Frame(main_container, bg=THEME["bg"])
+        content_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        
+        # Секція токену бота
+        token_section = tk.LabelFrame(
+            content_frame,
+            text="🤖 Telegram бот",
+            font=("Segoe UI", 10, "bold"),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"],
+            padx=10,
+            pady=10,
+            relief="flat",
+            bd=1,
+            highlightbackground=THEME["border"],
+            highlightthickness=1
+        )
+        token_section.pack(fill="x", pady=(0, 8))
+        
+        # Компактне розташування: мітка та поле в одному рядку
+        token_row = tk.Frame(token_section, bg=THEME["frame_bg"])
+        token_row.pack(fill="x", pady=(0, 6))
         
         tk.Label(
-            token_frame,
-            text="Токен Telegram боту:",
-            font=("Arial", 10)
-        ).pack(anchor="w")
+            token_row,
+            text="Токен:",
+            font=("Segoe UI", 9),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
+        ).pack(side="left", padx=(0, 8))
         
         # Фрейм для поля вводу та кнопки вставки
-        entry_frame = tk.Frame(token_frame)
-        entry_frame.pack(fill="x", pady=5)
+        entry_frame = tk.Frame(token_row, bg=THEME["frame_bg"])
+        entry_frame.pack(side="left", fill="x", expand=True)
         
-        self.token_entry = tk.Entry(entry_frame, width=40, show="*")
-        self.token_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.token_entry = tk.Entry(
+            entry_frame,
+            width=40,
+            show="*",
+            font=("Consolas", 10),
+            bg=THEME["entry_bg"],
+            fg=THEME["entry_fg"],
+            insertbackground=THEME["fg"],
+            relief="flat",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground=THEME["border"],
+            highlightcolor=THEME["accent"]
+        )
+        self.token_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
         
-        # Кнопка вставки з буферу обміну
+        # Кнопка очищення поля токену
+        clear_button = tk.Button(
+            entry_frame,
+            text="✕",
+            command=self._clear_token_field,
+            font=("Segoe UI", 9),
+            bg=THEME["error"],
+            fg=THEME["button_fg"],
+            activebackground="#b02a2a",
+            activeforeground=THEME["button_fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=6,
+            bd=0,
+            width=3
+        )
+        clear_button.pack(side="right", padx=(0, 6))
+        
+        # Кнопка вставки з буферу обміну (компактна)
         paste_button = tk.Button(
             entry_frame,
-            text="Вставити",
+            text="📋",
             command=self._paste_token_from_clipboard,
-            width=12,
-            font=("Arial", 9),
-            cursor="hand2"
+            font=("Segoe UI", 9),
+            bg=THEME["button_bg"],
+            fg=THEME["button_fg"],
+            activebackground=THEME["button_active"],
+            activeforeground=THEME["button_fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=6,
+            bd=0,
+            width=3
         )
-        paste_button.pack(side="right", fill="y")
+        paste_button.pack(side="right")
         
         if self.bot_token:
             self.token_entry.insert(0, self.bot_token)
         
-        # Статус підключення
+        # Статус підключення (компактний)
         self.connection_status_label = tk.Label(
-            token_frame,
+            token_section,
             text="",
-            font=("Arial", 9),
-            fg="gray"
+            font=("Segoe UI", 8),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
         )
         self.connection_status_label.pack(anchor="w", pady=(2, 0))
         
@@ -184,73 +261,209 @@ class SettingsWindow:
         
         self.token_entry.bind("<ButtonRelease-1>", on_button_release)
         
-        # Фрейм для QR-коду
-        qr_frame = tk.Frame(self.window)
-        qr_frame.pack(pady=10)
+        # Секція QR-коду та OTP (компактна, горизонтальне розташування)
+        qr_section = tk.LabelFrame(
+            content_frame,
+            text="🔐 Підключення адміністратора",
+            font=("Segoe UI", 10, "bold"),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"],
+            padx=10,
+            pady=10,
+            relief="flat",
+            bd=1,
+            highlightbackground=THEME["border"],
+            highlightthickness=1
+        )
+        qr_section.pack(fill="x", pady=(0, 8))
+        
+        # Контейнер для QR-коду та OTP (горизонтально)
+        qr_container = tk.Frame(qr_section, bg=THEME["frame_bg"])
+        qr_container.pack(fill="x")
+        
+        # Ліва частина: QR-код (компактний)
+        qr_left = tk.Frame(qr_container, bg=THEME["frame_bg"])
+        qr_left.pack(side="left", padx=(0, 12))
         
         tk.Label(
-            qr_frame,
-            text="QR-код для підключення адміністратора:",
-            font=("Arial", 10)
-        ).pack()
+            qr_left,
+            text="QR-код:",
+            font=("Segoe UI", 8),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
+        ).pack(pady=(0, 4))
         
         self.qr_label = tk.Label(
-            qr_frame,
-            text="QR-код буде тут",
-            bg="white",
-            width=150,
-            height=150
-        )
-        self.qr_label.pack(pady=5)
-        
-        # Мітка з інструкцією
-        otp_info_label = tk.Label(
-            qr_frame,
-            text="Або введіть код вручну:",
-            font=("Arial", 11),
-            fg="gray"
-        )
-        otp_info_label.pack(pady=(10, 5))
-        
-        # Відображення OTP коду
-        self.otp_display_label = tk.Label(
-            qr_frame,
-            text="",
-            font=("Arial", 24, "bold"),
-            fg="#1976D2",
-            bg="white",
-            relief="sunken",
+            qr_left,
+            text="QR-код\nбуде тут",
+            bg=THEME["entry_bg"],
+            width=100,
+            height=100,
+            relief="flat",
             bd=2,
-            padx=20,
-            pady=12
+            highlightbackground=THEME["border"],
+            highlightthickness=2,
+            font=("Segoe UI", 7),
+            fg=THEME["fg"],
+            justify="center"
         )
-        self.otp_display_label.pack(pady=(0, 10))
+        self.qr_label.pack()
         
-        # Поля для пароля
-        password_frame = tk.Frame(self.window)
-        password_frame.pack(pady=10, padx=20, fill="x")
-        
-        tk.Label(
-            password_frame,
-            text="Новий батьківський пароль:",
-            font=("Arial", 10)
-        ).pack(anchor="w")
-        
-        self.password_entry = tk.Entry(password_frame, width=50, show="*")
-        self.password_entry.pack(fill="x", pady=5)
+        # Права частина: OTP код (компактний)
+        otp_right = tk.Frame(qr_container, bg=THEME["frame_bg"])
+        otp_right.pack(side="left", fill="x", expand=True)
         
         tk.Label(
-            password_frame,
-            text="Підтвердіть пароль:",
-            font=("Arial", 10)
-        ).pack(anchor="w", pady=(10, 0))
+            otp_right,
+            text="Код підключення:",
+            font=("Segoe UI", 8),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
+        ).pack(pady=(0, 4))
         
-        self.password_confirm_entry = tk.Entry(password_frame, width=50, show="*")
-        self.password_confirm_entry.pack(fill="x", pady=5)
+        self.otp_display_label = tk.Label(
+            otp_right,
+            text="",
+            font=("Consolas", 20, "bold"),
+            fg=THEME["accent"],
+            bg=THEME["entry_bg"],
+            relief="flat",
+            bd=0,
+            padx=15,
+            pady=8,
+            highlightthickness=2,
+            highlightbackground=THEME["border"]
+        )
+        self.otp_display_label.pack()
+        
+        # Секція пароля (компактна, поля поруч)
+        password_section = tk.LabelFrame(
+            content_frame,
+            text="🔒 Батьківський пароль",
+            font=("Segoe UI", 10, "bold"),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"],
+            padx=10,
+            pady=10,
+            relief="flat",
+            bd=1,
+            highlightbackground=THEME["border"],
+            highlightthickness=1
+        )
+        password_section.pack(fill="x", pady=(0, 8))
+        
+        # Поля паролів в одному рядку
+        password_row = tk.Frame(password_section, bg=THEME["frame_bg"])
+        password_row.pack(fill="x")
+        
+        # Перше поле пароля
+        password1_frame = tk.Frame(password_row, bg=THEME["frame_bg"])
+        password1_frame.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        
+        tk.Label(
+            password1_frame,
+            text="Новий пароль:",
+            font=("Segoe UI", 8),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
+        ).pack(anchor="w", pady=(0, 4))
+        
+        self.password_entry = tk.Entry(
+            password1_frame,
+            show="*",
+            font=("Segoe UI", 9),
+            bg=THEME["entry_bg"],
+            fg=THEME["entry_fg"],
+            insertbackground=THEME["fg"],
+            relief="flat",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground=THEME["border"],
+            highlightcolor=THEME["accent"]
+        )
+        self.password_entry.pack(fill="x", ipady=5)
+        
+        # Друге поле пароля
+        password2_frame = tk.Frame(password_row, bg=THEME["frame_bg"])
+        password2_frame.pack(side="left", fill="x", expand=True)
+        
+        tk.Label(
+            password2_frame,
+            text="Підтвердження:",
+            font=("Segoe UI", 8),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
+        ).pack(anchor="w", pady=(0, 4))
+        
+        self.password_confirm_entry = tk.Entry(
+            password2_frame,
+            show="*",
+            font=("Segoe UI", 9),
+            bg=THEME["entry_bg"],
+            fg=THEME["entry_fg"],
+            insertbackground=THEME["fg"],
+            relief="flat",
+            bd=0,
+            highlightthickness=2,
+            highlightbackground=THEME["border"],
+            highlightcolor=THEME["accent"]
+        )
+        self.password_confirm_entry.pack(fill="x", ipady=5)
         
         # Прив'язка подій для перевірки паролів
         self.password_entry.bind("<KeyRelease>", self._check_password_fields)
         self.password_confirm_entry.bind("<KeyRelease>", self._check_password_fields)
+        
+        # Кнопки (компактні, внизу)
+        button_frame = tk.Frame(content_frame, bg=THEME["bg"])
+        button_frame.pack(pady=(5, 0), fill="x")
+        
+        # Контейнер для кнопок по центру
+        button_container = tk.Frame(button_frame, bg=THEME["bg"])
+        button_container.pack()
+        
+        self.save_button = tk.Button(
+            button_container,
+            text="💾 Зберегти",
+            command=self.save_settings,
+            font=("Segoe UI", 10, "bold"),
+            bg=THEME["button_bg"],
+            fg=THEME["button_fg"],
+            activebackground=THEME["button_active"],
+            activeforeground=THEME["button_fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=20,
+            pady=8,
+            bd=0
+        )
+        self.save_button.pack(side="left", padx=(0, 8))
+        
+        if not self.is_first_run:
+            cancel_button = tk.Button(
+                button_container,
+                text="✗ Скасувати",
+                command=self.window.destroy,
+                font=("Segoe UI", 9),
+                bg=THEME["frame_bg"],
+                fg=THEME["fg"],
+                activebackground=THEME["border"],
+                activeforeground=THEME["fg"],
+                relief="flat",
+                cursor="hand2",
+                padx=18,
+                pady=8,
+                bd=0
+            )
+            cancel_button.pack(side="left")
+    
+    def _clear_token_field(self) -> None:
+        """Очищає поле введення токену."""
+        self.token_entry.delete(0, tk.END)
+        self.token_entry.focus_set()
+        # Оновлюємо QR-код після очищення
+        self.update_qr_code()
+        logger.debug("Поле токену очищено")
     
     def _paste_token_from_clipboard(self) -> None:
         """Вставляє токен з буферу обміну в поле вводу."""
@@ -292,41 +505,6 @@ class SettingsWindow:
                 "Помилка",
                 f"Не вдалося вставити текст з буферу обміну:\n{str(e)}"
             )
-        except Exception as e:
-            logger.error(f"Помилка вставки з буферу обміну: {e}")
-            messagebox.showerror(
-                "Помилка",
-                f"Не вдалося вставити текст з буферу обміну:\n{str(e)}"
-            )
-        
-        # Кнопки
-        button_frame = tk.Frame(self.window)
-        button_frame.pack(pady=20)
-        
-        self.save_button = tk.Button(
-            button_frame,
-            text="Зберегти",
-            command=self.save_settings,
-            font=("Arial", 12),
-            bg="#4CAF50",
-            fg="white",
-            width=15,
-            height=2
-        )
-        self.save_button.pack(side="left", padx=5)
-        
-        if not self.is_first_run:
-            cancel_button = tk.Button(
-                button_frame,
-                text="Скасувати",
-                command=self.window.destroy,
-                font=("Arial", 12),
-                bg="#f44336",
-                fg="white",
-                width=15,
-                height=2
-            )
-            cancel_button.pack(side="left", padx=5)
     
     def _on_close_settings(self) -> None:
         """Обробник закриття вікна налаштувань (не перший запуск)."""
@@ -365,22 +543,28 @@ class SettingsWindow:
             password_confirm = self.password_confirm_entry.get()
             
             if password and password_confirm and password == password_confirm:
-                self.save_button.config(state="normal")
+                self.save_button.config(state="normal", bg=THEME["button_bg"])
             else:
-                self.save_button.config(state="disabled")
+                self.save_button.config(state="disabled", bg=THEME["border"])
     
     def update_qr_code(self) -> None:
         """Оновлює QR-код на основі поточного токену та OTP."""
         token = self.token_entry.get().strip()
         
         if not token:
-            self.qr_label.config(image="", text="Введіть токен для генерації QR-коду")
+            self.qr_label.config(
+                image="", 
+                text="Введіть токен\nдля генерації QR-коду",
+                bg=THEME["entry_bg"],
+                fg=THEME["fg"],
+                font=("Segoe UI", 10)
+            )
             self.otp_display_label.config(text="")
-            self.connection_status_label.config(text="", fg="gray")
+            self.connection_status_label.config(text="", fg=THEME["fg"])
             return
         
         # Показуємо статус підключення
-        self.connection_status_label.config(text="Підключення...", fg="blue")
+        self.connection_status_label.config(text="⏳ Підключення...", fg=THEME["warning"])
         self.window.update_idletasks()  # Оновлюємо GUI без блокування
         
         # Отримуємо username бота в окремому потоці, щоб не блокувати GUI
@@ -430,7 +614,7 @@ class SettingsWindow:
         if not bot_username:
             self.connection_status_label.config(
                 text="Помилка підключення: не вдалося отримати дані бота",
-                fg="red"
+                fg=THEME["error"]
             )
             self.qr_label.config(
                 image="",
@@ -453,9 +637,9 @@ class SettingsWindow:
             # Генеруємо QR-код
             qr_img = generate_qr_code_resized(
                 data=auth_url,
-                size=(150, 150),
+                size=(120, 120),  # Оптимальний розмір для сканування
                 version=1,
-                box_size=5,
+                box_size=6,
                 border=4
             )
             
@@ -465,8 +649,8 @@ class SettingsWindow:
             # Відображаємо OTP код
             self.otp_display_label.config(
                 text=otp_code,
-                font=("Arial", 24, "bold"),
-                fg="#1976D2"
+                font=("Consolas", 28, "bold"),
+                fg=THEME["accent"]
             )
             
             logger.debug("QR-код оновлено")
@@ -477,7 +661,7 @@ class SettingsWindow:
             self.otp_display_label.config(text="")
             self.connection_status_label.config(
                 text=f"Помилка генерації QR-коду: {str(e)}",
-                fg="red"
+                fg=THEME["error"]
             )
     
     def _update_qr_with_error(self, error_msg: str) -> None:
@@ -497,13 +681,19 @@ class SettingsWindow:
         token = self.token_entry.get().strip()
         
         if not token:
-            self.qr_label.config(image="", text="Введіть токен для генерації QR-коду")
+            self.qr_label.config(
+                image="", 
+                text="Введіть токен\nдля генерації QR-коду",
+                bg=THEME["entry_bg"],
+                fg=THEME["fg"],
+                font=("Segoe UI", 10)
+            )
             self.otp_display_label.config(text="")
-            self.connection_status_label.config(text="", fg="gray")
+            self.connection_status_label.config(text="", fg=THEME["fg"])
             return
         
         # Показуємо статус підключення
-        self.connection_status_label.config(text="Підключення...", fg="blue")
+        self.connection_status_label.config(text="⏳ Підключення...", fg=THEME["warning"])
         self.window.update_idletasks()  # Оновлюємо GUI без блокування
         
         # Отримуємо username бота
@@ -513,7 +703,7 @@ class SettingsWindow:
             if not bot_username:
                 self.connection_status_label.config(
                     text="Помилка підключення: не вдалося отримати дані бота",
-                    fg="red"
+                    fg=THEME["error"]
                 )
                 self.qr_label.config(
                     image="",
@@ -538,7 +728,7 @@ class SettingsWindow:
             
             self.connection_status_label.config(
                 text=error_msg,
-                fg="red"
+                fg=THEME["error"]
             )
             self.qr_label.config(
                 image="",
@@ -555,9 +745,9 @@ class SettingsWindow:
             # Генеруємо QR-код
             qr_img = generate_qr_code_resized(
                 data=auth_url,
-                size=(150, 150),
+                size=(200, 200),  # Оптимальний розмір для сканування
                 version=1,
-                box_size=5,
+                box_size=6,
                 border=4
             )
             
@@ -567,8 +757,8 @@ class SettingsWindow:
             # Відображаємо OTP код
             self.otp_display_label.config(
                 text=otp_code,
-                font=("Arial", 24, "bold"),
-                fg="#1976D2"
+                font=("Consolas", 28, "bold"),
+                fg=THEME["accent"]
             )
             
             logger.debug("QR-код оновлено")

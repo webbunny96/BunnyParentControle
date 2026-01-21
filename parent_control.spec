@@ -33,6 +33,7 @@ a = Analysis(
         'src.gui.settings_window',
         'src.gui.password_dialog',
         'src.gui.blocking_window',
+        'src.gui.themes',
         
         # Utils
         'src.utils.logger',
