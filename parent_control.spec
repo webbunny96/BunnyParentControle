@@ -43,6 +43,7 @@ a = Analysis(
         'src.utils.telegram_api',
         'src.utils.env_manager',
         'src.utils.bot_signal',
+        'src.utils.password_validator',
         
         # Database
         'src.core.database',

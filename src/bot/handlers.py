@@ -9,7 +9,7 @@ from aiogram import Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 
-from src.core.config import load_config, save_config
+from src.core.config import load_config, save_config, set_password
 from src.core.monitor import get_status_info
 from src.bot.keyboards import (
     get_main_keyboard,
@@ -21,6 +21,7 @@ from src.bot.keyboards import (
     DAY_NAMES_FULL
 )
 from src.utils.logger import get_logger
+from src.utils.password_validator import validate_password
 
 logger = get_logger(__name__)
 
@@ -410,9 +411,19 @@ async def handle_change_password_callback(callback: CallbackQuery, config: Dict[
     """Обробник callback для зміни пароля."""
     config["awaiting_password"] = True
     save_config(config)
-    await callback.message.edit_text(
+    
+    password_requirements = (
         "🔑 Введіть новий батьківський пароль:\n\n"
-        "Пароль буде використовуватися для доступу до налаштувань на комп'ютері.",
+        "📋 Вимоги до пароля:\n"
+        "• Мінімум 8 символів\n"
+        "• Великі літери (A-Z)\n"
+        "• Малі літери (a-z)\n"
+        "• Цифри (0-9)\n\n"
+        "Пароль буде використовуватися для доступу до налаштувань на комп'ютері."
+    )
+    
+    await callback.message.edit_text(
+        password_requirements,
         reply_markup=get_cancel_keyboard()
     )
 
@@ -465,11 +476,10 @@ async def process_time_input_handler(message: Message) -> None:
 
 
 async def process_password_input_handler(message: Message) -> None:
-    """Обробник введення нового пароля.
+    """Обробник введення нового пароля з валідацією.
     
     Args:
         message: Повідомлення з новим паролем
-        bot: Об'єкт бота
     """
     if not is_admin(message.from_user.id):
         return
@@ -481,16 +491,43 @@ async def process_password_input_handler(message: Message) -> None:
     
     new_password = message.text.strip()
     
-    if len(new_password) < 4:
-        await message.answer("❌ Пароль повинен містити мінімум 4 символи. Спробуйте ще раз:")
+    # Валідуємо пароль
+    is_valid, errors, requirements = validate_password(new_password)
+    
+    if not is_valid:
+        # Формуємо повідомлення з помилками
+        error_message = "❌ Пароль не відповідає вимогам безпеки:\n\n"
+        for error in errors:
+            error_message += f"• {error}\n"
+        
+        error_message += "\n📋 Вимоги до пароля:\n"
+        for req_key, fulfilled in requirements.items():
+            status = "✅" if fulfilled else "❌"
+            error_message += f"{status} {req_key}\n"
+        
+        error_message += "\nСпробуйте ще раз:"
+        await message.answer(error_message)
         return
     
-    config["parent_password"] = new_password
-    config["awaiting_password"] = False
-    save_config(config)
-    
-    logger.info(f"Батьківський пароль змінено користувачем {message.from_user.id}")
-    await message.answer("✅ Батьківський пароль успішно змінено!", reply_markup=get_main_keyboard())
+    # Пароль валідний, зберігаємо його
+    try:
+        set_password(new_password)
+        config["awaiting_password"] = False
+        save_config(config)
+        
+        logger.info(f"Батьківський пароль змінено користувачем {message.from_user.id}")
+        
+        success_message = (
+            "✅ Батьківський пароль успішно змінено!\n\n"
+            "Пароль відповідає всім вимогам безпеки."
+        )
+        await message.answer(success_message, reply_markup=get_main_keyboard())
+    except Exception as e:
+        logger.error(f"Помилка збереження пароля: {e}", exc_info=True)
+        await message.answer(
+            "❌ Помилка збереження пароля. Спробуйте ще раз або зверніться до адміністратора.",
+            reply_markup=get_cancel_keyboard()
+        )
 
 
 def register_handlers(dp: Dispatcher, config: Dict[str, Any]) -> None:

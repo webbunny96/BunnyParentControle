@@ -18,6 +18,7 @@ from src.utils.logger import get_logger
 from src.utils.env_manager import get_bot_token_from_env, save_bot_token_to_env
 from src.utils.telegram_api import get_bot_username
 from src.utils.qr_generator import generate_qr_code_resized, create_auth_url
+from src.utils.password_validator import validate_password
 from src.gui.themes import THEME
 
 logger = get_logger(__name__)
@@ -41,7 +42,7 @@ class SettingsWindow:
         self.window.title(
             "Налаштування" if not is_first_run else "Перший запуск - Налаштування"
         )
-        self.window.geometry("650x530")
+        self.window.geometry("650x600")
         self.window.resizable(False, False)
         
         # Застосовуємо темну тему
@@ -432,8 +433,54 @@ class SettingsWindow:
         )
         self.password_confirm_entry.pack(fill="x", ipady=5)
         
-        # Прив'язка подій для перевірки паролів
-        self.password_entry.bind("<KeyRelease>", self._check_password_fields)
+        # Фрейм для вимог до пароля
+        requirements_frame = tk.Frame(password_section, bg=THEME["frame_bg"])
+        requirements_frame.pack(fill="x", pady=(10, 0))
+        
+        tk.Label(
+            requirements_frame,
+            text="Вимоги до пароля:",
+            font=("Segoe UI", 8, "bold"),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
+        ).pack(anchor="w", pady=(0, 5))
+        
+        # Контейнер для вимог (2 колонки)
+        requirements_container = tk.Frame(requirements_frame, bg=THEME["frame_bg"])
+        requirements_container.pack(fill="x")
+        
+        # Ліва колонка вимог
+        requirements_left = tk.Frame(requirements_container, bg=THEME["frame_bg"])
+        requirements_left.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        # Права колонка вимог
+        requirements_right = tk.Frame(requirements_container, bg=THEME["frame_bg"])
+        requirements_right.pack(side="left", fill="x", expand=True)
+        
+        # Створюємо лейбли для вимог (будуть оновлюватися динамічно)
+        self.requirement_labels = {}
+        requirement_keys = [
+            "Мінімум 8 символів",
+            "Великі літери (A-Z)",
+            "Малі літери (a-z)",
+            "Цифри (0-9)"
+        ]
+        
+        for i, req_key in enumerate(requirement_keys):
+            parent = requirements_left if i < 2 else requirements_right
+            label = tk.Label(
+                parent,
+                text=f"⏳ {req_key}",
+                font=("Segoe UI", 7),
+                bg=THEME["frame_bg"],
+                fg=THEME["fg"],
+                anchor="w"
+            )
+            label.pack(anchor="w", pady=2)
+            self.requirement_labels[req_key] = label
+        
+        # Прив'язка подій для перевірки паролів та валідації
+        self.password_entry.bind("<KeyRelease>", self._on_password_changed)
         self.password_confirm_entry.bind("<KeyRelease>", self._check_password_fields)
         
         # Кнопки (компактні, внизу)
@@ -606,6 +653,33 @@ class SettingsWindow:
             unregister_otp_change_callback(self._on_otp_changed)
             self.window.destroy()
     
+    def _on_password_changed(self, event=None) -> None:
+        """Обробник зміни пароля - валідує та оновлює індикатори вимог.
+        
+        Args:
+            event: Подія (не використовується)
+        """
+        password = self.password_entry.get()
+        
+        # Валідуємо пароль та отримуємо деталі
+        is_valid, errors, requirements = validate_password(password)
+        
+        # Оновлюємо індикатори вимог
+        for req_key, label in self.requirement_labels.items():
+            if requirements.get(req_key, False):
+                label.config(
+                    text=f"✅ {req_key}",
+                    fg=THEME["success"]
+                )
+            else:
+                label.config(
+                    text=f"❌ {req_key}",
+                    fg=THEME["error"]
+                )
+        
+        # Перевіряємо чи паролі співпадають та валідні
+        self._check_password_fields(event)
+    
     def _check_password_fields(self, event=None) -> None:
         """Перевіряє поля паролів та вмикає/вимикає кнопку збереження.
         
@@ -616,7 +690,11 @@ class SettingsWindow:
             password = self.password_entry.get()
             password_confirm = self.password_confirm_entry.get()
             
-            if password and password_confirm and password == password_confirm:
+            # Валідуємо пароль
+            is_valid, errors, requirements = validate_password(password)
+            
+            # Перевіряємо чи паролі співпадають та валідні
+            if password and password_confirm and password == password_confirm and is_valid:
                 self.save_button.config(state="normal", bg=THEME["button_bg"])
             else:
                 self.save_button.config(state="disabled", bg=THEME["border"])
@@ -869,6 +947,17 @@ class SettingsWindow:
             token_saved = True
         
         # Зберігаємо пароль в БД
+        # Валідуємо пароль перед збереженням
+        is_valid, errors, requirements = validate_password(password)
+        
+        if not is_valid:
+            error_text = "Пароль не відповідає вимогам безпеки:\n\n"
+            for error in errors:
+                error_text += f"• {error}\n"
+            messagebox.showerror("Помилка валідації пароля", error_text)
+            return
+        
+        # Пароль валідний, зберігаємо його
         from src.core.config import set_password
         set_password(password)
         # Оновлюємо локальну конфігурацію
