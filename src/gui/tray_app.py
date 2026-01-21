@@ -122,16 +122,27 @@ class TrayApp:
         image = PILImage.new('RGB', (64, 64), color=(70, 130, 180))
         
         # Створюємо меню
+        # default=True в MenuItem робить його обробником лівого кліку на іконку
         menu = pystray.Menu(
-            pystray.MenuItem("Відкрити налаштування", self._show_settings_from_tray),
+            pystray.MenuItem(
+                "Відкрити налаштування", 
+                self._show_settings_from_tray,
+                default=True  # Цей пункт буде викликатися при лівому кліку на іконку
+            ),
             pystray.MenuItem("Вихід", self._quit_app_with_password)
         )
         
-        self.icon = pystray.Icon("ParentControl", image, "Parent Control", menu)
+        # Створюємо іконку
+        self.icon = pystray.Icon(
+            "ParentControl", 
+            image, 
+            "Parent Control", 
+            menu
+        )
         
         # Запускаємо іконку в окремому потоці
         threading.Thread(target=self.icon.run, daemon=True).start()
-        logger.info("System tray icon запущено")
+        logger.info("System tray icon запущено (лівий клік відкриває налаштування)")
     
     def _show_settings_from_tray(self, icon=None, item=None) -> None:
         """Показує налаштування після перевірки пароля (викликається з tray thread).
