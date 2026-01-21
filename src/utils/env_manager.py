@@ -1,39 +1,34 @@
-"""Модуль для роботи з .env файлом."""
+"""Модуль для роботи з токеном бота.
 
-import os
-from pathlib import Path
+Токен зберігається в зашифрованому вигляді в SQLite базі даних.
+"""
+
 from typing import Optional
 
+from src.core.database import get_secret_value, set_secret_value
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-ENV_FILE = ".env"
+# Ключ для збереження токену бота в БД
+BOT_TOKEN_KEY = "bot_token"
 
 
 def get_bot_token_from_env() -> Optional[str]:
-    """Отримує токен бота з .env файлу.
+    """Отримує токен бота з БД.
     
     Returns:
         Optional[str]: Токен бота або None якщо не знайдено
     """
-    if not os.path.exists(ENV_FILE):
-        return None
-    
-    try:
-        with open(ENV_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("BOT_TOKEN="):
-                    token = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    return token
-    except (IOError, ValueError) as e:
-        logger.error(f"Помилка читання .env файлу: {e}")
-    
+    token = get_secret_value(BOT_TOKEN_KEY)
+    if token:
+        logger.debug("Токен бота отримано з БД")
+        return token
     return None
 
 
 def save_bot_token_to_env(token: str) -> bool:
-    """Зберігає токен бота в .env файл.
+    """Зберігає токен бота в БД.
     
     Args:
         token: Токен бота для збереження
@@ -45,40 +40,10 @@ def save_bot_token_to_env(token: str) -> bool:
         logger.warning("Спроба зберегти порожній токен")
         return False
     
-    token = token.strip()
-    env_content = []
-    token_found = False
-    
-    # Читаємо існуючий файл якщо він є
-    if os.path.exists(ENV_FILE):
-        try:
-            with open(ENV_FILE, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("BOT_TOKEN="):
-                        env_content.append(f'BOT_TOKEN="{token}"\n')
-                        token_found = True
-                    else:
-                        env_content.append(line)
-        except IOError as e:
-            logger.error(f"Помилка читання .env файлу: {e}")
-            return False
-    
-    # Додаємо токен якщо не знайдено
-    if not token_found:
-        env_content.append(f'BOT_TOKEN="{token}"\n')
-    
-    # Зберігаємо файл
     try:
-        with open(ENV_FILE, "w", encoding="utf-8") as f:
-            f.writelines(env_content)
-        logger.info("Токен бота збережено в .env файл")
+        set_secret_value(BOT_TOKEN_KEY, token.strip())
+        logger.info("Токен бота збережено в БД")
         return True
-    except IOError as e:
-        logger.error(f"Помилка запису в .env файл: {e}")
+    except Exception as e:
+        logger.error(f"Помилка збереження токену бота: {e}")
         return False
-
-
-
-
-
-

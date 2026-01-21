@@ -3,8 +3,6 @@
 import asyncio
 import sys
 from aiogram import Bot, Dispatcher
-from dotenv import load_dotenv
-
 from src.core.config import load_config
 from src.utils.logger import get_logger
 from src.utils.telegram_api import get_bot_token, validate_bot_token
@@ -20,11 +18,6 @@ async def run_bot() -> None:
     """
     logger.info("run_bot() викликано")
     
-    # Завантажуємо змінні середовища
-    logger.debug("Завантажуємо змінні середовища...")
-    load_dotenv()
-    logger.debug("Змінні середовища завантажено")
-    
     logger.info("Запуск Telegram бота...")
     
     # Завантажуємо конфігурацію
@@ -36,14 +29,14 @@ async def run_bot() -> None:
     logger.debug("Перевіряємо BOT_TOKEN...")
     bot_token = get_bot_token()
     if not bot_token:
-        logger.error("BOT_TOKEN не знайдено в .env файлі!")
-        logger.error("Бот не буде запущено. Створіть .env файл з BOT_TOKEN")
+        logger.error("BOT_TOKEN не знайдено в БД!")
+        logger.error("Бот не буде запущено. Введіть токен в налаштуваннях")
         raise ValueError("BOT_TOKEN не знайдено")
     
     logger.debug("Валідуємо BOT_TOKEN...")
     if not validate_bot_token(bot_token):
         logger.error("BOT_TOKEN невалідний!")
-        logger.error("Бот не буде запущено. Перевірте правильність токену в .env файлі")
+        logger.error("Бот не буде запущено. Перевірте правильність токену в налаштуваннях")
         raise ValueError("BOT_TOKEN невалідний")
     
     logger.info("BOT_TOKEN валідний, створюємо бота та dispatcher...")

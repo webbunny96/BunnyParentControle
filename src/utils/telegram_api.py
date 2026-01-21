@@ -1,16 +1,12 @@
 """Модуль для роботи з Telegram Bot API."""
 
-import os
 from typing import Optional
 import requests
-from dotenv import load_dotenv
 
 from src.utils.logger import get_logger
+from src.utils.env_manager import get_bot_token_from_env
 
 logger = get_logger(__name__)
-
-# Завантажуємо змінні середовища
-load_dotenv()
 
 # Константи
 TELEGRAM_API_BASE_URL = "https://api.telegram.org/bot"
@@ -18,12 +14,12 @@ DEFAULT_TIMEOUT = 5
 
 
 def get_bot_token() -> Optional[str]:
-    """Отримує токен бота з змінних середовища.
+    """Отримує токен бота з БД.
     
     Returns:
         Optional[str]: Токен бота або None якщо не знайдено
     """
-    token = os.getenv("BOT_TOKEN")
+    token = get_bot_token_from_env()
     
     if not token or token == "YOUR_BOT_TOKEN_HERE":
         return None

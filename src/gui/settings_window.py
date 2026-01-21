@@ -345,8 +345,8 @@ class SettingsWindow:
     
     def _on_close_first_run(self) -> None:
         """Обробник закриття вікна на першому запуску."""
-        self.config = load_config()
-        if not self.config.get("parent_password"):
+        from src.core.config import has_password
+        if not has_password():
             messagebox.showwarning(
                 "Увага",
                 "Необхідно встановити батьківський пароль перед продовженням!"
@@ -601,9 +601,11 @@ class SettingsWindow:
                 return
             token_saved = True
         
-        # Зберігаємо пароль в конфігурацію
-        self.config["parent_password"] = password
-        save_config(self.config)
+        # Зберігаємо пароль в БД
+        from src.core.config import set_password
+        set_password(password)
+        # Оновлюємо локальну конфігурацію
+        self.config["parent_password"] = "***"  # Плейсхолдер
         
         logger.info("Налаштування збережено")
         

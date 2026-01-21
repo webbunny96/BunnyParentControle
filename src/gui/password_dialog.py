@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import messagebox
 from typing import Optional
 
-from src.core.config import load_config
+from src.core.config import check_password
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -107,14 +107,12 @@ class PasswordDialog:
     def check_password(self) -> None:
         """Перевіряє введений пароль.
         
-        Порівнює введений пароль з паролем з конфігурації.
+        Порівнює введений пароль з паролем з БД.
         Якщо пароль правильний, встановлює self.result = True та закриває діалог.
         """
-        config = load_config()
         entered_password = self.password_entry.get()
-        stored_password = config.get("parent_password")
         
-        if stored_password and stored_password == entered_password:
+        if check_password(entered_password):
             self.result = True
             logger.debug("Пароль введено правильно")
             self.dialog.destroy()

@@ -45,7 +45,8 @@ class TrayApp:
             temp_config = create_default_config()
         
         # Визначаємо чи це перший запуск (немає пароля)
-        self._is_first_run = not temp_config.get("parent_password")
+        from src.core.config import has_password
+        self._is_first_run = not has_password()
         logger.debug(f"Перший запуск: {self._is_first_run}")
         
         self.root = tk.Tk()
@@ -98,8 +99,8 @@ class TrayApp:
                 pass
             return
         
-        config = load_config()
-        if not config.get("parent_password"):
+        from src.core.config import has_password
+        if not has_password():
             messagebox.showwarning(
                 "Увага",
                 "Необхідно встановити батьківський пароль перед закриттям програми!"
@@ -310,7 +311,8 @@ class TrayApp:
                 self.config = load_config()
                 
                 # Після першого запуску налаштовуємо tray іконку
-                if self.config.get("parent_password"):
+                from src.core.config import has_password
+                if has_password():
                     logger.info("Пароль встановлено, налаштовуємо tray іконку...")
                     self._is_first_run = False  # Позначаємо що перший запуск завершено
                     
@@ -405,8 +407,8 @@ class TrayApp:
             if self.root:
                 self.root.update_idletasks()
             
-            config = load_config()
-            if not config.get("parent_password"):
+            from src.core.config import has_password
+            if not has_password():
                 messagebox.showwarning(
                     "Увага",
                     "Необхідно встановити батьківський пароль перед закриттям програми!"
@@ -459,8 +461,8 @@ class TrayApp:
             signum: Номер сигналу
             frame: Поточний кадр стеку
         """
-        config = load_config()
-        if not config.get("parent_password"):
+        from src.core.config import has_password
+        if not has_password():
             # Не можна вийти без пароля
             return
         

@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from dotenv import load_dotenv
-
 from src.core.config import load_config
 from src.core.monitor import monitor_logic, should_block
 from src.utils.logger import setup_logging, get_logger
@@ -96,9 +94,6 @@ async def main(launch_gui: bool = True) -> None:
     Args:
         launch_gui: Чи запускати GUI додаток (за замовчуванням True)
     """
-    # Завантажуємо змінні середовища
-    load_dotenv()
-    
     logger.info("Запуск сервісу батьківського контролю...")
     
     # Запускаємо GUI додаток в окремому потоці (якщо потрібно)

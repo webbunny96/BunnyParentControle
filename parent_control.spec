@@ -10,6 +10,8 @@ a = Analysis(
     datas=[
         ('config.example.json', '.'),
         ('config.example.md', '.'),
+        # Вбудовуємо шаблони файлів в exe для ініціалізації при першому запуску
+        # Ці файли будуть доступні через sys._MEIPASS
     ],
     hiddenimports=[
         # Core modules
@@ -39,6 +41,15 @@ a = Analysis(
         'src.utils.telegram_api',
         'src.utils.env_manager',
         'src.utils.bot_signal',
+        
+        # Database
+        'src.core.database',
+        'sqlite3',
+        'cryptography',
+        'cryptography.fernet',
+        'cryptography.hazmat.primitives',
+        'cryptography.hazmat.primitives.hashes',
+        'cryptography.hazmat.primitives.kdf.pbkdf2',
         
         # External libraries
         'aiogram',
