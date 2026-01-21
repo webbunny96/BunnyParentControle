@@ -6,6 +6,7 @@
 import asyncio
 import subprocess
 import sys
+import ctypes
 from pathlib import Path
 from typing import Optional
 
@@ -20,8 +21,30 @@ from src.gui.gui_runner import run_gui_thread
 from src.gui.blocking_runner import run_blocking_window, BlockingWindowThread
 from src.utils.bot_signal import check_bot_start_signal
 
-# Налаштування логування
-setup_logging(level=20)  # INFO level
+
+def _enable_console() -> None:
+    """Відкриває консоль для Windows GUI додатку."""
+    try:
+        # Відкриваємо консоль
+        ctypes.windll.kernel32.AllocConsole()
+        # Перенаправляємо stdout та stderr на консоль
+        sys.stdout = open('CONOUT$', 'w', encoding='utf-8')
+        sys.stderr = open('CONOUT$', 'w', encoding='utf-8')
+    except Exception as e:
+        # Якщо не вдалося відкрити консоль, просто ігноруємо помилку
+        pass
+
+
+# Перевіряємо аргументи командного рядка
+DEBUG_MODE = '--debug' in sys.argv or '-d' in sys.argv
+
+# Якщо режим debug, відкриваємо консоль та встановлюємо DEBUG рівень логування
+if DEBUG_MODE:
+    _enable_console()
+    setup_logging(level=10)  # DEBUG level
+else:
+    setup_logging(level=20)  # INFO level
+
 logger = get_logger(__name__)
 
 
@@ -377,7 +400,20 @@ if __name__ == "__main__":
         action="store_true",
         help="Не запускати GUI додаток (тільки сервіс моніторингу та бот)"
     )
+    parser.add_argument(
+        "--debug",
+        "-d",
+        action="store_true",
+        help="Відкрити консоль та встановити DEBUG рівень логування"
+    )
     args = parser.parse_args()
+    
+    # Якщо передано --debug, перевіряємо ще раз (на випадок якщо перевірка на початку не спрацювала)
+    if args.debug and not DEBUG_MODE:
+        _enable_console()
+        setup_logging(level=10)  # DEBUG level
+        logger = get_logger(__name__)
+        logger.debug("Режим DEBUG увімкнено через аргумент командного рядка")
     
     try:
         asyncio.run(main(launch_gui=not args.no_gui))
