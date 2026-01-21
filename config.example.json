@@ -1,0 +1,47 @@
+{
+    "admin_id": 0,
+    "otp": "ABCD1234",
+    "schedule": {
+        "0": {
+            "start": "22:00",
+            "end": "07:00",
+            "enabled": false
+        },
+        "1": {
+            "start": "22:00",
+            "end": "07:00",
+            "enabled": false
+        },
+        "2": {
+            "start": "22:00",
+            "end": "07:00",
+            "enabled": false
+        },
+        "3": {
+            "start": "22:00",
+            "end": "07:00",
+            "enabled": false
+        },
+        "4": {
+            "start": "22:00",
+            "end": "07:00",
+            "enabled": false
+        },
+        "5": {
+            "start": "22:00",
+            "end": "07:00",
+            "enabled": false
+        },
+        "6": {
+            "start": "22:00",
+            "end": "07:00",
+            "enabled": false
+        }
+    },
+    "awaiting_time": null,
+    "admin_ids": [],
+    "force_block": false,
+    "parent_password": null,
+    "time_limit_minutes": 0,
+    "start_time": 0
+}
