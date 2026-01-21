@@ -32,29 +32,54 @@ class TrayApp:
         self.quit_requested = False
         
         logger.debug("Створюємо головне вікно...")
-        self.root = tk.Tk()
-        self.root.withdraw()  # Ховаємо вікно
-        # ВАЖЛИВО: Забороняємо закриття root вікна через X кнопку
-        # Root вікно має залишатися живим для підтримки tray іконки
-        self.root.protocol("WM_DELETE_WINDOW", self._on_root_close)
-        # Переконаємося що root вікно не закривається при закритті дочірніх вікон
-        self.root.wm_attributes("-topmost", False)  # Не робимо завжди поверх інших
         
-        # Завантажуємо конфігурацію після створення вікна
-        logger.debug("Завантажуємо конфігурацію...")
+        # Спочатку завантажуємо конфігурацію, щоб визначити чи це перший запуск
+        logger.debug("Завантажуємо конфігурацію для визначення першого запуску...")
         try:
-            self.config = load_config()
+            temp_config = load_config()
             logger.debug("Конфігурація завантажена успішно")
         except Exception as e:
             logger.error(f"Помилка завантаження конфігурації: {e}", exc_info=True)
             # Створюємо дефолтну конфігурацію якщо не вдалося завантажити
             from src.core.config import create_default_config
-            self.config = create_default_config()
+            temp_config = create_default_config()
+        
+        # Визначаємо чи це перший запуск (немає пароля)
+        self._is_first_run = not temp_config.get("parent_password")
+        logger.debug(f"Перший запуск: {self._is_first_run}")
+        
+        self.root = tk.Tk()
         
         # Перевіряємо чи це перший запуск
+        # При першому запуску root вікно має бути мінімальним і прозорим, але БЕЗ overrideredirect
+        # щоб Toplevel вікна могли правильно відображатися на Windows
+        if not self._is_first_run:
+            # Встановлюємо мінімальний розмір та позицію поза екраном
+            # Це дозволяє Toplevel вікнам працювати, але root вікно практично не видно
+            # Використовуємо overrideredirect щоб прибрати рамку та заголовок
+            self.root.overrideredirect(True)  # Прибираємо рамку та заголовок
+            self.root.geometry("1x1+-1000+-1000")  # 1x1 піксель поза екраном
+            self.root.attributes("-alpha", 0.0)  # Робимо повністю прозорим
+        else:
+            # При першому запуску root вікно має бути мінімальним і прозорим
+            # але БЕЗ overrideredirect, щоб Toplevel вікна працювали правильно
+            self.root.geometry("1x1+-1000+-1000")  # 1x1 піксель поза екраном
+            try:
+                self.root.attributes("-alpha", 0.01)  # Майже прозоре (0.0 може не працювати)
+            except:
+                pass
+            # НЕ використовуємо withdraw() - це може заважати Toplevel вікнам
+        
+        # ВАЖЛИВО: Забороняємо закриття root вікна через X кнопку
+        # Root вікно має залишатися живим для підтримки tray іконки
+        self.root.protocol("WM_DELETE_WINDOW", self._on_root_close)
+        
+        # Зберігаємо конфігурацію (вже завантажена вище)
+        self.config = temp_config
+        
+        # Перевіряємо чи це перший запуск (вже визначено вище)
         # Не викликаємо show_settings тут - це буде зроблено в run()
         # щоб уникнути подвійного виклику
-        self._is_first_run = not self.config.get("parent_password")
         if not self._is_first_run:
             # Якщо не перший запуск, налаштовуємо tray одразу
             self._setup_tray()
@@ -115,17 +140,20 @@ class TrayApp:
             icon: Об'єкт іконки (не використовується)
             item: Об'єкт пункту меню (не використовується)
         """
-        logger.debug("Клік на 'Відкрити налаштування' з tray меню")
+        logger.info("Клік на 'Відкрити налаштування' з tray меню")
         
         # Плануємо GUI операцію в головному потоці
         if self.root:
             try:
+                logger.debug("Плануємо виклик _show_settings_from_tray_impl через root.after()")
                 self.root.after(0, self._show_settings_from_tray_impl)
                 self.root.update_idletasks()
+                logger.debug("Виклик заплановано успішно")
             except Exception as e:
                 logger.error(f"Помилка при плануванні показу налаштувань: {e}", exc_info=True)
                 # Альтернативний спосіб - прямий виклик
                 try:
+                    logger.debug("Спроба прямого виклику _show_settings_from_tray_impl")
                     self._show_settings_from_tray_impl()
                 except Exception as e2:
                     logger.error(f"Помилка при прямому виклику: {e2}", exc_info=True)
@@ -135,39 +163,48 @@ class TrayApp:
     def _show_settings_from_tray_impl(self) -> None:
         """Реалізація показу налаштувань (виконується в головному потоці)."""
         try:
-            logger.debug("Відкриваємо налаштування...")
+            logger.info("Відкриваємо налаштування з трей меню...")
             
-            # Робимо root вікно видимим для показу діалогу
-            if self.root:
-                self.root.deiconify()
-                self.root.update_idletasks()
-                self.root.lift()
-                self.root.focus_force()
-                self.root.update()
+            # Переконаємося що root вікно існує та оновлюємо його стан
+            if not self.root:
+                logger.error("Root вікно не існує!")
+                return
             
-            # Показуємо діалог пароля
-            logger.debug("Створюємо діалог пароля...")
-            dialog = PasswordDialog(self.root)
+            logger.debug("Оновлюємо root вікно...")
+            self.root.update_idletasks()
             
-            if self.root:
+            # Показуємо діалог пароля (він сам зробить себе видимим)
+            logger.info("Створюємо діалог пароля...")
+            try:
+                dialog = PasswordDialog(self.root)
+                logger.info("Діалог пароля створено успішно")
+            except Exception as e:
+                logger.error(f"Помилка при створенні діалогу пароля: {e}", exc_info=True)
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return
+            
+            # Очікуємо закриття діалогу пароля
+            logger.debug("Очікуємо закриття діалогу пароля...")
+            try:
                 self.root.wait_window(dialog.dialog)
+                logger.debug("Діалог пароля закрито")
+            except Exception as e:
+                logger.error(f"Помилка при очікуванні закриття діалогу: {e}", exc_info=True)
             
-            logger.debug(f"Пароль введено, результат: {dialog.result}")
-            
-            # Ховаємо root вікно після закриття діалогу
-            if self.root:
-                self.root.withdraw()
+            logger.info(f"Пароль введено, результат: {dialog.result}")
             
             if dialog.result:
-                logger.debug("Пароль правильний, відкриваємо налаштування...")
+                logger.info("Пароль правильний, відкриваємо налаштування...")
+                # Root вікно залишається прихованим (1x1 піксель поза екраном)
                 self.show_settings(first_run=False)
             else:
-                logger.debug("Пароль невірний або скасовано")
+                logger.info("Пароль невірний або скасовано")
                 
         except Exception as e:
             logger.error(f"Помилка при відкритті налаштувань: {e}", exc_info=True)
-            if self.root:
-                self.root.withdraw()
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
     
     def show_settings(self, first_run: bool = False) -> None:
         """Показує вікно налаштувань.
@@ -176,11 +213,26 @@ class TrayApp:
             first_run: Чи це перший запуск
         """
         try:
-            # Робимо root вікно видимим перед показом налаштувань (якщо не перший запуск)
-            if not first_run and self.root:
-                self.root.deiconify()
-                self.root.lift()
-                self.root.focus_force()
+            # Root вікно вже налаштоване як мінімально видиме (1x1 піксель поза екраном, прозоре)
+            # Просто переконаємося що root вікно існує та оновлюємо його стан
+            if self.root:
+                self.root.update_idletasks()
+                # Переконаємося що root вікно залишається в правильному стані
+                # (overrideredirect + geometry + alpha вже налаштовані в __init__)
+                try:
+                    # Перевіряємо чи root вікно не стало видимим через якусь помилку
+                    # Але не викликаємо withdraw(), щоб не зламати налаштування
+                    if self.root.winfo_viewable():
+                        # Якщо стало видимим, повертаємо до правильного стану
+                        self.root.overrideredirect(True)
+                        self.root.geometry("1x1+-1000+-1000")
+                        try:
+                            self.root.attributes("-alpha", 0.0)
+                        except:
+                            pass
+                        logger.debug("Root вікно було видимим, повернуто до правильного стану")
+                except Exception as e:
+                    logger.debug(f"Помилка при перевірці root вікна: {e}")
             
             # Закриваємо попереднє вікно налаштувань якщо воно існує
             if self.settings_window:
@@ -191,7 +243,41 @@ class TrayApp:
                 self.settings_window = None
             
             # Створюємо нове вікно налаштувань
-            self.settings_window = SettingsWindow(self.root, is_first_run=first_run)
+            logger.info("Створюємо вікно налаштувань...")
+            try:
+                self.settings_window = SettingsWindow(self.root, is_first_run=first_run)
+                logger.info("Вікно налаштувань створено успішно")
+            except Exception as e:
+                logger.error(f"Помилка при створенні вікна налаштувань: {e}", exc_info=True)
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return
+            
+            # Переконаємося що root вікно залишається в правильному стані після створення Toplevel
+            if self.root:
+                try:
+                    # При першому запуску root вікно має залишатися мінімальним і прозорим
+                    # але БЕЗ overrideredirect, щоб Toplevel вікна працювали
+                    if first_run:
+                        # Переконаємося що root вікно залишається в правильному стані
+                        self.root.geometry("1x1+-1000+-1000")
+                        try:
+                            self.root.attributes("-alpha", 0.01)
+                        except:
+                            pass
+                        logger.debug("Root вікно залишається в правильному стані для першого запуску")
+                    else:
+                        # При звичайному запуску використовуємо overrideredirect
+                        if self.root.winfo_viewable():
+                            self.root.overrideredirect(True)
+                            self.root.geometry("1x1+-1000+-1000")
+                            try:
+                                self.root.attributes("-alpha", 0.0)
+                            except:
+                                pass
+                            logger.debug("Root вікно стало видимим після створення SettingsWindow, повернуто до правильного стану")
+                except Exception as e:
+                    logger.debug(f"Помилка при перевірці root вікна: {e}")
             
             if first_run:
                 # Очікуємо поки налаштування будуть збережені
@@ -216,17 +302,24 @@ class TrayApp:
                 if self.config.get("parent_password"):
                     logger.info("Пароль встановлено, налаштовуємо tray іконку...")
                     self._is_first_run = False  # Позначаємо що перший запуск завершено
-                    self._setup_tray()
-                    # Ховаємо root вікно після налаштування tray
-                    # Але root вікно має залишатися живим для підтримки tray іконки
+                    
+                    # Тепер переводимо root вікно в правильний стан (overrideredirect)
+                    # перед налаштуванням tray
                     if self.root and self.root.winfo_exists():
                         try:
-                            self.root.withdraw()
-                            logger.info("Перший запуск завершено, tray іконка активна, root вікно приховано")
+                            # Переходимо з withdraw() на overrideredirect
+                            self.root.deiconify()  # Спочатку показуємо
+                            self.root.overrideredirect(True)
+                            self.root.geometry("1x1+-1000+-1000")
+                            try:
+                                self.root.attributes("-alpha", 0.0)
+                            except:
+                                pass
                         except tk.TclError as e:
-                            logger.error(f"Помилка при приховуванні root вікна: {e}")
-                    else:
-                        logger.error("Root вікно не існує після налаштування tray!")
+                            logger.error(f"Помилка при переході root вікна в правильний стан: {e}")
+                    
+                    self._setup_tray()
+                    logger.info("Перший запуск завершено, tray іконка активна, root вікно приховано")
                 else:
                     logger.warning("Пароль не встановлено після першого запуску")
             else:
@@ -246,9 +339,14 @@ class TrayApp:
                     try:
                         # Перевіряємо чи root вікно ще існує
                         self.root.winfo_exists()
-                        # Ховаємо root вікно після закриття налаштувань
-                        # Але root вікно залишається живим для підтримки tray іконки
-                        self.root.withdraw()
+                        # Повертаємо root вікно до правильного стану (не використовуємо withdraw())
+                        # Root вікно має залишатися живим для підтримки tray іконки
+                        self.root.overrideredirect(True)
+                        self.root.geometry("1x1+-1000+-1000")
+                        try:
+                            self.root.attributes("-alpha", 0.0)
+                        except:
+                            pass
                         logger.debug("Вікно налаштувань закрито, root вікно залишається живим для tray")
                     except tk.TclError:
                         logger.error("Root вікно було закрите! Це не повинно статися")
@@ -291,12 +389,10 @@ class TrayApp:
         try:
             logger.debug("Запит на вихід з програми...")
             
-            # Робимо root вікно видимим для показу діалогу
+            # НЕ робимо root вікно видимим - Toplevel вікна можуть працювати з прихованим root
+            # Просто переконаємося що root вікно існує та оновлюємо його стан
             if self.root:
-                self.root.deiconify()
-                self.root.lift()
-                self.root.focus_force()
-                self.root.update()
+                self.root.update_idletasks()
             
             config = load_config()
             if not config.get("parent_password"):

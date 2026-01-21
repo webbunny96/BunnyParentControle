@@ -40,6 +40,12 @@ class SettingsWindow:
         # Центруємо вікно
         self._center_window()
         
+        # Переконаємося що вікно видиме та на передньому плані
+        self.window.deiconify()  # Показуємо вікно
+        self.window.lift()  # Піднімаємо на передній план
+        self.window.focus_force()  # Даємо фокус
+        self.window.update()  # Оновлюємо вікно
+        
         # Налаштовуємо модальність
         if not is_first_run:
             self.window.transient(parent)
