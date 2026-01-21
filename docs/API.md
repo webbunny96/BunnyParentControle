@@ -510,3 +510,70 @@ url = create_auth_url("mybot", "ABCD1234")
 **Returns:**
 - `bool`: `True` якщо успішно збережено
 
+### src.utils.password_validator
+
+Модуль для валідації батьківського пароля з вимогами безпеки.
+
+#### `validate_password(password: str) -> Tuple[bool, List[str], Dict[str, bool]]`
+
+Валідує пароль та повертає результат з деталями.
+
+**Args:**
+- `password`: Пароль для валідації
+
+**Returns:**
+- `Tuple[bool, List[str], Dict[str, bool]]`: 
+  - `bool`: Чи пароль валідний (всі вимоги виконані)
+  - `List[str]`: Список помилок/попереджень
+  - `Dict[str, bool]`: Словник з деталями виконання вимог
+
+**Вимоги до пароля:**
+- Мінімум 8 символів
+- Великі літери (A-Z)
+- Малі літери (a-z)
+- Цифри (0-9)
+
+**Example:**
+```python
+from src.utils.password_validator import validate_password
+
+is_valid, errors, requirements = validate_password("MyPass123")
+# is_valid: True
+# errors: []
+# requirements: {
+#     "Мінімум 8 символів": True,
+#     "Великі літери (A-Z)": True,
+#     "Малі літери (a-z)": True,
+#     "Цифри (0-9)": True
+# }
+
+is_valid, errors, requirements = validate_password("weak")
+# is_valid: False
+# errors: [
+#     "Пароль повинен містити мінімум 8 символів",
+#     "Пароль повинен містити хоча б одну велику літеру (A-Z)",
+#     "Пароль повинен містити хоча б одну цифру (0-9)"
+# ]
+```
+
+#### `get_password_strength(password: str) -> str`
+
+Оцінює силу пароля.
+
+**Args:**
+- `password`: Пароль для оцінки
+
+**Returns:**
+- `str`: Рівень сили пароля (`"weak"`, `"medium"`, `"strong"`)
+
+**Example:**
+```python
+from src.utils.password_validator import get_password_strength
+
+strength = get_password_strength("MyPass123")
+# Повертає: "strong"
+
+strength = get_password_strength("password")
+# Повертає: "weak"
+```
+
