@@ -8,6 +8,12 @@ import queue
 import threading
 
 from src.core.config import load_config, save_config
+from src.core.otp_manager import (
+    register_otp_change_callback, 
+    unregister_otp_change_callback,
+    get_time_until_next_update,
+    OTP_UPDATE_INTERVAL
+)
 from src.utils.logger import get_logger
 from src.utils.env_manager import get_bot_token_from_env, save_bot_token_to_env
 from src.utils.telegram_api import get_bot_username
@@ -75,6 +81,9 @@ class SettingsWindow:
         
         # Запускаємо перевірку черги результатів
         self._check_result_queue()
+        
+        # Реєструємо callback для оновлення QR-коду при зміні OTP
+        register_otp_change_callback(self._on_otp_changed)
         
         # На першому запуску вимикаємо кнопку збереження до введення пароля
         # Перевірка після створення віджетів, щоб save_button вже існував
@@ -336,6 +345,19 @@ class SettingsWindow:
         )
         self.otp_display_label.pack()
         
+        # Лейбл з відліком часу до оновлення
+        self.countdown_label = tk.Label(
+            otp_right,
+            text="",
+            font=("Segoe UI", 9),
+            bg=THEME["frame_bg"],
+            fg=THEME["fg"]
+        )
+        self.countdown_label.pack(pady=(8, 0))
+        
+        # Запускаємо оновлення відліку
+        self._update_countdown()
+        
         # Секція пароля (компактна, поля поруч)
         password_section = tk.LabelFrame(
             content_frame,
@@ -506,8 +528,58 @@ class SettingsWindow:
                 f"Не вдалося вставити текст з буферу обміну:\n{str(e)}"
             )
     
+    def _update_countdown(self) -> None:
+        """Оновлює відлік часу до наступного оновлення OTP."""
+        try:
+            remaining_seconds = get_time_until_next_update()
+            
+            if remaining_seconds > 0:
+                minutes = remaining_seconds // 60
+                seconds = remaining_seconds % 60
+                countdown_text = f"⏱️ Оновлення через: {minutes:02d}:{seconds:02d}"
+                
+                # Змінюємо колір залежно від часу
+                if remaining_seconds <= 60:  # Менше хвилини
+                    color = THEME["error"]
+                elif remaining_seconds <= 180:  # Менше 3 хвилин
+                    color = THEME["warning"]
+                else:
+                    color = THEME["fg"]
+                
+                self.countdown_label.config(text=countdown_text, fg=color)
+            else:
+                self.countdown_label.config(text="⏱️ Оновлення...", fg=THEME["warning"])
+            
+            # Плануємо наступне оновлення через 1 секунду
+            self.window.after(1000, self._update_countdown)
+        except Exception as e:
+            logger.error(f"Помилка оновлення відліку: {e}")
+            # Плануємо повторну спробу через 1 секунду
+            self.window.after(1000, self._update_countdown)
+    
+    def _on_otp_changed(self, new_otp: str) -> None:
+        """Callback функція, яка викликається при зміні OTP коду.
+        
+        Args:
+            new_otp: Новий OTP код
+        """
+        # Оновлюємо конфігурацію
+        self.config = load_config()
+        
+        # Оновлюємо QR-код якщо токен вже введено
+        token = self.token_entry.get().strip()
+        if token:
+            # Оновлюємо QR-код з новим OTP
+            self.window.after(0, lambda: self.update_qr_code())
+            logger.debug(f"QR-код буде оновлено з новим OTP: {new_otp}")
+        
+        # Відлік оновиться автоматично через _update_countdown
+    
     def _on_close_settings(self) -> None:
         """Обробник закриття вікна налаштувань (не перший запуск)."""
+        # Видаляємо callback для зміни OTP
+        unregister_otp_change_callback(self._on_otp_changed)
+        
         # Просто закриваємо вікно налаштувань, root вікно залишається живим
         # Використовуємо withdraw() замість destroy() для безпеки
         # але для Toplevel потрібно використовувати destroy()
@@ -530,6 +602,8 @@ class SettingsWindow:
                 "Необхідно встановити батьківський пароль перед продовженням!"
             )
         else:
+            # Видаляємо callback для зміни OTP
+            unregister_otp_change_callback(self._on_otp_changed)
             self.window.destroy()
     
     def _check_password_fields(self, event=None) -> None:
@@ -625,9 +699,12 @@ class SettingsWindow:
         
         # Підключення успішне
         self.connection_status_label.config(
-            text=f"Підключено до @{bot_username}",
-            fg="green"
+            text=f"✅ Підключено до @{bot_username}",
+            fg=THEME["success"]
         )
+        
+        # Оновлюємо конфігурацію для отримання актуального OTP
+        self.config = load_config()
         
         # Створюємо URL для авторизації
         otp_code = self.config.get('otp', 'N/A')

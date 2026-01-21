@@ -18,6 +18,7 @@ a = Analysis(
         'src.core.config',
         'src.core.monitor',
         'src.core.scheduler',
+        'src.core.otp_manager',
         
         # Bot modules
         'src.bot.main',

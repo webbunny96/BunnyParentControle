@@ -12,6 +12,7 @@ from typing import Optional
 
 from src.core.config import load_config
 from src.core.monitor import monitor_logic, should_block
+from src.core.otp_manager import start_otp_updates, stop_otp_updates
 from src.utils.logger import setup_logging, get_logger
 from src.utils.telegram_api import get_bot_token, get_bot_username
 from src.utils.qr_generator import print_qr_code_ascii, create_auth_url
@@ -143,6 +144,13 @@ async def main(launch_gui: bool = True) -> None:
     logger.info("Завантажуємо конфігурацію...")
     config = load_config()
     logger.info("Конфігурація завантажена")
+    
+    # Запускаємо періодичне оновлення OTP коду (кожні 10 хвилин)
+    try:
+        start_otp_updates()
+        logger.info("Сервіс оновлення OTP запущено (інтервал: 10 хвилин)")
+    except Exception as e:
+        logger.error(f"Не вдалося запустити сервіс оновлення OTP: {e}", exc_info=True)
     
     # Виводимо інформацію про реєстрацію
     if config.get("otp"):
