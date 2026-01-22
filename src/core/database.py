@@ -386,3 +386,4 @@ def get_all_config() -> Dict[str, Any]:
 # Ініціалізуємо БД при імпорті модуля
 _init_database()
 
+

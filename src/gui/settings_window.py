@@ -6,8 +6,9 @@ from typing import Optional
 from PIL import Image, ImageTk
 import queue
 import threading
+import subprocess
 
-from src.core.config import load_config, save_config
+from src.core.config import load_config, save_config, has_password
 from src.core.otp_manager import (
     register_otp_change_callback, 
     unregister_otp_change_callback,
@@ -630,15 +631,31 @@ class SettingsWindow:
             # Встановлюємо службу
             logger.info("Встановлення служби Windows...")
             if install_service():
-                messagebox.showinfo(
-                    "Успіх",
-                    "Служба Windows успішно встановлена.\n\n"
-                    "Служба буде автоматично запускатися при завантаженні системи.\n"
-                    "Для запуску зараз перезавантажте комп'ютер або запустіть службу вручну через 'Служби Windows'."
-                )
                 logger.info("Служба Windows встановлена успішно")
                 # Оновлюємо кнопку
                 self._update_service_button()
+                
+                # Показуємо діалог з опціями перезавантаження
+                restart_result = self._ask_restart_dialog(
+                    "Служба встановлена",
+                    "Служба Windows успішно встановлена!\n\n"
+                    "Для повного застосування змін рекомендується перезавантажити комп'ютер."
+                )
+                
+                if restart_result == "now":
+                    # Перезавантажуємо комп'ютер зараз
+                    self._restart_computer()
+                elif restart_result == "later":
+                    # Плануємо перезавантаження пізніше
+                    self._restart_computer_later()
+                else:
+                    # Скасовано
+                    messagebox.showinfo(
+                        "Інформація",
+                        "Служба встановлена.\n\n"
+                        "Ви можете перезавантажити комп'ютер пізніше для повного застосування змін.\n"
+                        "Або запустіть службу вручну через 'Служби Windows'."
+                    )
             else:
                 messagebox.showerror(
                     "Помилка",
@@ -720,6 +737,193 @@ class SettingsWindow:
             messagebox.showerror(
                 "Помилка",
                 f"Сталася помилка при видаленні служби:\n{str(e)}"
+            )
+    
+    def _ask_restart_dialog(self, title: str, message: str) -> str:
+        """Показує діалог з трьома опціями перезавантаження.
+        
+        Args:
+            title: Заголовок діалогу
+            message: Текст повідомлення
+            
+        Returns:
+            'now' - перезавантажити зараз
+            'later' - перезавантажити пізніше (через 1 годину)
+            'cancel' - скасувати
+        """
+        dialog = tk.Toplevel(self.window)
+        dialog.title(title)
+        dialog.geometry("450x200")
+        dialog.resizable(False, False)
+        dialog.transient(self.window)
+        dialog.grab_set()
+        
+        # Центруємо діалог
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        result = {"value": "cancel"}
+        
+        # Текст повідомлення
+        message_label = tk.Label(
+            dialog,
+            text=message,
+            font=("Segoe UI", 10),
+            bg=THEME["bg"],
+            fg=THEME["fg"],
+            wraplength=400,
+            justify="left",
+            padx=20,
+            pady=15
+        )
+        message_label.pack()
+        
+        # Фрейм для кнопок
+        button_frame = tk.Frame(dialog, bg=THEME["bg"])
+        button_frame.pack(pady=15)
+        
+        def set_result(value: str) -> None:
+            result["value"] = value
+            dialog.destroy()
+        
+        # Кнопка "Перезавантажити зараз"
+        restart_now_btn = tk.Button(
+            button_frame,
+            text="🔄 Перезавантажити зараз",
+            command=lambda: set_result("now"),
+            font=("Segoe UI", 9),
+            bg=THEME["button_bg"],
+            fg=THEME["button_fg"],
+            activebackground=THEME["button_active"],
+            activeforeground=THEME["button_fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=15,
+            pady=8,
+            bd=0
+        )
+        restart_now_btn.pack(side="left", padx=5)
+        
+        # Кнопка "Перезавантажити пізніше"
+        restart_later_btn = tk.Button(
+            button_frame,
+            text="⏰ Перезавантажити пізніше",
+            command=lambda: set_result("later"),
+            font=("Segoe UI", 9),
+            bg=THEME["button_bg"],
+            fg=THEME["button_fg"],
+            activebackground=THEME["button_active"],
+            activeforeground=THEME["button_fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=15,
+            pady=8,
+            bd=0
+        )
+        restart_later_btn.pack(side="left", padx=5)
+        
+        # Кнопка "Скасувати"
+        cancel_btn = tk.Button(
+            button_frame,
+            text="❌ Скасувати",
+            command=lambda: set_result("cancel"),
+            font=("Segoe UI", 9),
+            bg=THEME["bg"],
+            fg=THEME["fg"],
+            activebackground=THEME["button_active"],
+            activeforeground=THEME["fg"],
+            relief="flat",
+            cursor="hand2",
+            padx=15,
+            pady=8,
+            bd=0
+        )
+        cancel_btn.pack(side="left", padx=5)
+        
+        # Очікуємо закриття діалогу
+        dialog.wait_window()
+        
+        return result["value"]
+    
+    def _restart_computer_later(self) -> None:
+        """Планує перезавантаження комп'ютера через 1 годину."""
+        try:
+            logger.info("Планується перезавантаження комп'ютера через 1 годину...")
+            # Використовуємо команду shutdown для відкладеного перезавантаження Windows
+            # /r - перезавантаження
+            # /t 3600 - затримка 3600 секунд (1 година)
+            # /f - примусове закриття всіх запущених програм
+            subprocess.run(
+                ["shutdown", "/r", "/t", "3600", "/f"],
+                check=True,
+                timeout=5
+            )
+            logger.info("Команда відкладеного перезавантаження виконана успішно")
+            messagebox.showinfo(
+                "Перезавантаження заплановано",
+                "Комп'ютер буде перезавантажено через 1 годину.\n\n"
+                "Щоб скасувати перезавантаження, виконайте команду:\n"
+                "shutdown /a"
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("Таймаут при виконанні команди відкладеного перезавантаження")
+            messagebox.showerror(
+                "Помилка",
+                "Не вдалося запланувати перезавантаження комп'ютера.\n"
+                "Спробуйте перезавантажити вручну."
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Помилка при виконанні команди відкладеного перезавантаження: {e}")
+            messagebox.showerror(
+                "Помилка",
+                f"Не вдалося запланувати перезавантаження комп'ютера.\n"
+                f"Помилка: {str(e)}\n\n"
+                f"Спробуйте перезавантажити вручну."
+            )
+        except Exception as e:
+            logger.error(f"Помилка при плануванні перезавантаження комп'ютера: {e}", exc_info=True)
+            messagebox.showerror(
+                "Помилка",
+                f"Не вдалося запланувати перезавантаження комп'ютера:\n{str(e)}"
+            )
+    
+    def _restart_computer(self) -> None:
+        """Перезавантажує комп'ютер через команду shutdown."""
+        try:
+            logger.info("Ініціюється перезавантаження комп'ютера...")
+            # Використовуємо команду shutdown для перезавантаження Windows
+            # /r - перезавантаження
+            # /t 0 - затримка 0 секунд
+            # /f - примусове закриття всіх запущених програм
+            subprocess.run(
+                ["shutdown", "/r", "/t", "0", "/f"],
+                check=True,
+                timeout=5
+            )
+            logger.info("Команда перезавантаження виконана успішно")
+        except subprocess.TimeoutExpired:
+            logger.error("Таймаут при виконанні команди перезавантаження")
+            messagebox.showerror(
+                "Помилка",
+                "Не вдалося перезавантажити комп'ютер.\n"
+                "Спробуйте перезавантажити вручну."
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Помилка при виконанні команди перезавантаження: {e}")
+            messagebox.showerror(
+                "Помилка",
+                f"Не вдалося перезавантажити комп'ютер.\n"
+                f"Помилка: {str(e)}\n\n"
+                f"Спробуйте перезавантажити вручну."
+            )
+        except Exception as e:
+            logger.error(f"Несподівана помилка при перезавантаженні: {e}", exc_info=True)
+            messagebox.showerror(
+                "Помилка",
+                f"Сталася помилка при спробі перезавантаження:\n{str(e)}\n\n"
+                f"Спробуйте перезавантажити вручну."
             )
     
     def _clear_token_field(self) -> None:
@@ -1153,6 +1357,9 @@ class SettingsWindow:
             messagebox.showerror("Помилка валідації пароля", error_text)
             return
         
+        # Перевіряємо чи це перший запуск (пароль не був встановлений раніше)
+        password_was_set = has_password()
+        
         # Пароль валідний, зберігаємо його
         from src.core.config import set_password
         set_password(password)
@@ -1167,7 +1374,87 @@ class SettingsWindow:
             signal_bot_start()
             logger.info("Сигнал запуску бота відправлено")
         
-        messagebox.showinfo("Успіх", "Налаштування збережено!")
+        # Якщо це перший запуск (пароль не був встановлений), спробуємо автоматично встановити службу
+        if not password_was_set:
+            logger.info("Перший запуск: спроба автоматичного встановлення служби")
+            if is_admin():
+                if not is_service_installed():
+                    try:
+                        if install_service():
+                            logger.info("Служба автоматично встановлена після першого збереження налаштувань")
+                            # Оновлюємо кнопку служби якщо вона існує
+                            if hasattr(self, '_service_button'):
+                                self._update_service_button()
+                            
+                            # Показуємо діалог з опціями перезавантаження
+                            restart_result = self._ask_restart_dialog(
+                                "Налаштування збережено",
+                                "Налаштування збережено!\n\n"
+                                "Служба Windows автоматично встановлена.\n\n"
+                                "Для повного застосування змін рекомендується перезавантажити комп'ютер."
+                            )
+                            
+                            if restart_result == "now":
+                                # Перезавантажуємо комп'ютер зараз
+                                self._restart_computer()
+                            elif restart_result == "later":
+                                # Плануємо перезавантаження пізніше
+                                self._restart_computer_later()
+                            else:
+                                # Скасовано
+                                messagebox.showinfo(
+                                    "Інформація",
+                                    "Налаштування збережено!\n\n"
+                                    "Служба встановлена.\n"
+                                    "Ви можете перезавантажити комп'ютер пізніше для повного застосування змін."
+                                )
+                        else:
+                            logger.warning("Не вдалося автоматично встановити службу")
+                            messagebox.showinfo(
+                                "Успіх", 
+                                "Налаштування збережено!\n\nНе вдалося автоматично встановити службу. "
+                                "Ви можете встановити її вручну через кнопку в налаштуваннях."
+                            )
+                    except Exception as e:
+                        logger.error(f"Помилка при автоматичному встановленні служби: {e}", exc_info=True)
+                        messagebox.showinfo(
+                            "Успіх", 
+                            "Налаштування збережено!\n\nНе вдалося автоматично встановити службу. "
+                            "Ви можете встановити її вручну через кнопку в налаштуваннях."
+                        )
+                else:
+                    logger.info("Служба вже встановлена")
+                    # Показуємо діалог з опціями перезавантаження
+                    restart_result = self._ask_restart_dialog(
+                        "Налаштування збережено",
+                        "Налаштування збережено!\n\n"
+                        "Служба Windows вже встановлена.\n\n"
+                        "Для повного застосування змін рекомендується перезавантажити комп'ютер."
+                    )
+                    
+                    if restart_result == "now":
+                        # Перезавантажуємо комп'ютер зараз
+                        self._restart_computer()
+                    elif restart_result == "later":
+                        # Плануємо перезавантаження пізніше
+                        self._restart_computer_later()
+                    else:
+                        # Скасовано
+                        messagebox.showinfo(
+                            "Інформація",
+                            "Налаштування збережено!\n\n"
+                            "Ви можете перезавантажити комп'ютер пізніше для повного застосування змін."
+                        )
+            else:
+                logger.info("Недостатньо прав для автоматичного встановлення служби")
+                messagebox.showinfo(
+                    "Успіх", 
+                    "Налаштування збережено!\n\nДля встановлення служби Windows потрібні права адміністратора. "
+                    "Запустіть програму від імені адміністратора та встановіть службу через кнопку в налаштуваннях."
+                )
+        else:
+            messagebox.showinfo("Успіх", "Налаштування збережено!")
+        
         self.window.destroy()
 
 

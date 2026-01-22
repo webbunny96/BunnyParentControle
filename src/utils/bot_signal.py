@@ -35,3 +35,4 @@ def check_bot_start_signal() -> bool:
         logger.error(f"Помилка видалення сигналу: {e}")
         return False
 
+
