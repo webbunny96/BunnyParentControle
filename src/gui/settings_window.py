@@ -19,6 +19,14 @@ from src.utils.env_manager import get_bot_token_from_env, save_bot_token_to_env
 from src.utils.telegram_api import get_bot_username
 from src.utils.qr_generator import generate_qr_code_resized, create_auth_url
 from src.utils.password_validator import validate_password
+from src.utils.service_manager import (
+    is_service_installed,
+    uninstall_service,
+    install_service,
+    is_admin,
+    is_service_running,
+    stop_service
+)
 from src.gui.themes import THEME
 
 logger = get_logger(__name__)
@@ -525,6 +533,194 @@ class SettingsWindow:
                 bd=0
             )
             cancel_button.pack(side="left")
+            
+            # Кнопка встановлення/видалення служби Windows
+            try:
+                service_installed = is_service_installed()
+                
+                # Створюємо кнопку з динамічним текстом та командою
+                if service_installed:
+                    service_button_text = "🗑️ Видалити службу"
+                    service_button_bg = THEME["error"]
+                    service_button_active = "#b02a2a"
+                    service_button_command = self._uninstall_service
+                else:
+                    service_button_text = "⚙️ Встановити службу"
+                    service_button_bg = THEME["button_bg"]
+                    service_button_active = THEME["button_active"]
+                    service_button_command = self._install_service
+                
+                self.service_button = tk.Button(
+                    button_container,
+                    text=service_button_text,
+                    command=service_button_command,
+                    font=("Segoe UI", 9),
+                    bg=service_button_bg,
+                    fg=THEME["button_fg"],
+                    activebackground=service_button_active,
+                    activeforeground=THEME["button_fg"],
+                    relief="flat",
+                    cursor="hand2",
+                    padx=15,
+                    pady=8,
+                    bd=0
+                )
+                self.service_button.pack(side="left", padx=(8, 0))
+            except Exception as e:
+                logger.warning(f"Не вдалося перевірити статус служби: {e}")
+    
+    def _update_service_button(self) -> None:
+        """Оновлює текст та команду кнопки служби в залежності від статусу."""
+        try:
+            if not hasattr(self, 'service_button'):
+                return
+            
+            service_installed = is_service_installed()
+            
+            if service_installed:
+                self.service_button.config(
+                    text="🗑️ Видалити службу",
+                    bg=THEME["error"],
+                    activebackground="#b02a2a",
+                    command=self._uninstall_service
+                )
+            else:
+                self.service_button.config(
+                    text="⚙️ Встановити службу",
+                    bg=THEME["button_bg"],
+                    activebackground=THEME["button_active"],
+                    command=self._install_service
+                )
+        except Exception as e:
+            logger.warning(f"Не вдалося оновити кнопку служби: {e}")
+    
+    def _install_service(self) -> None:
+        """Встановлює службу Windows."""
+        try:
+            # Перевіряємо чи служба вже встановлена
+            if is_service_installed():
+                messagebox.showinfo(
+                    "Інформація",
+                    "Служба Windows вже встановлена."
+                )
+                self._update_service_button()
+                return
+            
+            # Перевіряємо права адміністратора
+            if not is_admin():
+                messagebox.showerror(
+                    "Помилка",
+                    "Для встановлення служби потрібні права адміністратора.\n\n"
+                    "Запустіть програму від імені адміністратора."
+                )
+                return
+            
+            # Підтвердження встановлення
+            result = messagebox.askyesno(
+                "Підтвердження",
+                "Встановити службу Windows?\n\n"
+                "Після встановлення служба буде автоматично запускатися при завантаженні системи.\n"
+                "Програма буде працювати у фоновому режимі без GUI.",
+                icon="question"
+            )
+            
+            if not result:
+                return
+            
+            # Встановлюємо службу
+            logger.info("Встановлення служби Windows...")
+            if install_service():
+                messagebox.showinfo(
+                    "Успіх",
+                    "Служба Windows успішно встановлена.\n\n"
+                    "Служба буде автоматично запускатися при завантаженні системи.\n"
+                    "Для запуску зараз перезавантажте комп'ютер або запустіть службу вручну через 'Служби Windows'."
+                )
+                logger.info("Служба Windows встановлена успішно")
+                # Оновлюємо кнопку
+                self._update_service_button()
+            else:
+                messagebox.showerror(
+                    "Помилка",
+                    "Не вдалося встановити службу.\n\n"
+                    "Перевірте логи для деталей або встановіть службу вручну через командний рядок."
+                )
+                
+        except Exception as e:
+            logger.error(f"Помилка при встановленні служби: {e}", exc_info=True)
+            messagebox.showerror(
+                "Помилка",
+                f"Сталася помилка при встановленні служби:\n{str(e)}"
+            )
+    
+    def _uninstall_service(self) -> None:
+        """Видаляє службу Windows з підтвердженням."""
+        try:
+            # Перевіряємо чи служба встановлена
+            if not is_service_installed():
+                messagebox.showinfo(
+                    "Інформація",
+                    "Служба Windows не встановлена."
+                )
+                self._update_service_button()
+                return
+            
+            # Перевіряємо права адміністратора
+            if not is_admin():
+                messagebox.showerror(
+                    "Помилка",
+                    "Для видалення служби потрібні права адміністратора.\n\n"
+                    "Запустіть програму від імені адміністратора."
+                )
+                return
+            
+            # Підтвердження видалення
+            result = messagebox.askyesno(
+                "Підтвердження",
+                "Ви впевнені, що хочете видалити службу Windows?\n\n"
+                "Після видалення служба не буде автоматично запускатися при завантаженні системи.\n"
+                "Програму можна буде запускати вручну.",
+                icon="warning"
+            )
+            
+            if not result:
+                return
+            
+            # Зупиняємо службу якщо вона запущена
+            if is_service_running():
+                logger.info("Зупинка служби перед видаленням...")
+                if not stop_service():
+                    messagebox.showerror(
+                        "Помилка",
+                        "Не вдалося зупинити службу.\n"
+                        "Спробуйте зупинити службу вручну через 'Служби Windows'."
+                    )
+                    return
+            
+            # Видаляємо службу
+            logger.info("Видалення служби Windows...")
+            if uninstall_service():
+                messagebox.showinfo(
+                    "Успіх",
+                    "Служба Windows успішно видалена.\n\n"
+                    "Програма більше не буде автоматично запускатися при завантаженні системи."
+                )
+                logger.info("Служба Windows видалена успішно")
+                # Оновлюємо кнопку
+                self._update_service_button()
+            else:
+                messagebox.showerror(
+                    "Помилка",
+                    "Не вдалося видалити службу.\n\n"
+                    "Перевірте логи для деталей або видаліть службу вручну через 'Служби Windows'."
+                )
+                
+        except Exception as e:
+            logger.error(f"Помилка при видаленні служби: {e}", exc_info=True)
+            messagebox.showerror(
+                "Помилка",
+                f"Сталася помилка при видаленні служби:\n{str(e)}"
+            )
     
     def _clear_token_field(self) -> None:
         """Очищає поле введення токену."""

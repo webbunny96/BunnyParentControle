@@ -19,6 +19,8 @@ a = Analysis(
         'src.core.monitor',
         'src.core.scheduler',
         'src.core.otp_manager',
+        'src.core.windows_service',
+        'src.core.database',
         
         # Bot modules
         'src.bot.main',
@@ -44,9 +46,7 @@ a = Analysis(
         'src.utils.env_manager',
         'src.utils.bot_signal',
         'src.utils.password_validator',
-        
-        # Database
-        'src.core.database',
+        'src.utils.service_manager',
         'sqlite3',
         'cryptography',
         'cryptography.fernet',
@@ -79,6 +79,16 @@ a = Analysis(
         'threading',
         'subprocess',
         'argparse',
+        
+        # Windows Service
+        'win32service',
+        'win32serviceutil',
+        'win32api',
+        'win32con',
+        'win32event',
+        'win32security',
+        'servicemanager',
+        'pywintypes',
     ],
     hookspath=[],
     hooksconfig={},

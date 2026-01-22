@@ -414,7 +414,51 @@ if __name__ == "__main__":
         action="store_true",
         help="Відкрити консоль та встановити DEBUG рівень логування"
     )
+    parser.add_argument(
+        "--service",
+        action="store_true",
+        help="Запустити як Windows службу"
+    )
     args = parser.parse_args()
+    
+    # Якщо передано --service, запускаємо як службу
+    if args.service:
+        try:
+            from src.core.windows_service import main as service_main
+            service_main()
+            sys.exit(0)
+        except Exception as e:
+            logger.error(f"Помилка запуску як служби: {e}", exc_info=True)
+            sys.exit(1)
+    
+    # Перевіряємо чи потрібно встановити службу при першому запуску
+    if is_frozen() and not args.no_gui:
+        try:
+            from src.core.config import has_password
+            from src.utils.service_manager import (
+                is_service_installed, 
+                install_service,
+                is_admin
+            )
+            
+            # Перевіряємо чи це перший запуск (немає пароля)
+            if not has_password():
+                # Перевіряємо чи служба вже встановлена
+                if not is_service_installed():
+                    # Перевіряємо чи є права адміністратора
+                    if is_admin():
+                        logger.info("Перший запуск - спроба встановити службу Windows...")
+                        if install_service():
+                            logger.info("Служба Windows успішно встановлена")
+                        else:
+                            logger.warning("Не вдалося встановити службу Windows")
+                    else:
+                        logger.info("Для встановлення служби потрібні права адміністратора")
+                        logger.info("Запустіть програму від імені адміністратора для автоматичного встановлення служби")
+                else:
+                    logger.info("Служба Windows вже встановлена")
+        except Exception as e:
+            logger.warning(f"Не вдалося перевірити/встановити службу: {e}")
     
     # Якщо передано --debug, перевіряємо ще раз (на випадок якщо перевірка на початку не спрацювала)
     if args.debug and not DEBUG_MODE:
